@@ -25,9 +25,11 @@
 - **팀 저장소 연동** — `lab.ssafy.com/s15-bigdata-dist-sub1/S15P21E105`. 모노레포(루트에 `back/ data/ front/ infra/`)라 우리 코드를 전부 `data/` 아래로 이동. 브랜치 `data/feat/S15P21E105-99-json-gold`(원격에 `data/dev` 기준으로 이미 있었음).
   - 커밋·MR 규칙을 `docs/GIT_CONVENTION.md`로 정함. BE가 이미 쓰는 `type: 제목 (지라키)` 형식과 같게 맞춤. 루트 README의 지라 연동 규칙(브랜치명에 키 → 진행 중, MR에 `Closes 키` → 완료) 반영.
   - 커밋 작성자를 다른 팀원 계정으로 잘못 넣어 푸시했다가 `jedabin` 으로 전부 정정 ([TS-006](TROUBLESHOOTING.md#ts-006)).
-- **서비스명 확정 → 패키지 이름 변경** — 임시명 Alzza 대신 서비스명 '한눈'이 정해져 패키지를 `alzza` → `hannun`으로 바꿈(`git mv`로 이력 유지). 명령은 `hannun-ingest`. 로컬 폴더 `Alzza/`는 저장소 루트라 그대로.
+- **서비스명 확정 → 패키지 이름 변경** — 임시명 Alzza 대신 서비스명 '한눈'이 정해져 패키지를 `alzza` → `hannun`으로 바꿈(`git mv`로 이력 유지). 명령은 `hannun-ingest`. 로컬 폴더도 `Alzza/` → `hannun/`으로 바꿈.
 
 - **데이터 파트 폴더 구조 정리** — `data/` 바로 아래에 pyproject 가 있어 파트 전체가 DS1 프로젝트처럼 보였다. 처음엔 사람별 `ds1/`로 옮겼다가, DS1·DS2 가 패키지를 같이 쓰는 게 낫다고 보고 **`data/ds/` 공용**으로 조정. 개인 문서(WORKLOG·TROUBLESHOOTING·tickets·CODE_STYLE)는 `ds/docs/ds1/`, `ds/docs/ds2/`로, `ds/README.md`는 둘이 함께 쓰는 문서로 다시 씀. 파트 공통은 `data/docs/`(GIT_CONVENTION, contracts/).
+
+- **폴더 이름 변경 후 테스트 복구** — 로컬 폴더를 `hannun/`으로 바꾸자 editable 설치가 옛 경로를 가리켜 `import hannun` 실패. `pip install -e ".[dev]"` 재실행으로 복구 ([TS-007](TROUBLESHOOTING.md#ts-007)). 테스트 21개·flake8·CLI 샘플 적재(2회 투입 시 `skipped_existing=5`) 재확인.
 
 ### 결정
 | 결정 | 이유 |

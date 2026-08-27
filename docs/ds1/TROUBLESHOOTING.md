@@ -79,6 +79,18 @@
 
 ---
 
+## TS-007 · 저장소 폴더 이름을 바꾸자 테스트가 전부 `No module named 'hannun'` (2026-08-27)
+
+**증상** — 로컬 폴더를 `Desktop\Alzza` → `Desktop\hannun`으로 바꾼 뒤 `pytest`가 수집 단계에서 `ModuleNotFoundError: No module named 'hannun'`로 21개 전부 실패. `hannun-ingest.exe`도 같은 오류. flake8은 정상 통과해서 코드 문제는 아니었다.
+
+**원인** — `pip install -e`(editable 설치)는 소스를 복사하지 않고 `.venv\Lib\site-packages\__editable__.hannun-0.1.0.pth`에 소스 경로(`...\Alzza\data\ds\src`)를 절대 경로로 적어 둔다. 폴더 이름이 바뀌면 그 경로가 없는 곳을 가리켜 `import hannun`이 실패한다. venv 자체(`python.exe`, 설치된 pandas 등)는 멀쩡해서 오류 위치가 헷갈렸다. `pip show hannun`의 `Editable project location`이 옛 경로를 보여 주는 것으로 확정.
+
+**해결** — `data\ds` 에서 `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"` 한 번. `.pth`가 새 경로로 다시 써지고 `hannun-ingest.exe`도 다시 만들어진다. 테스트 21개 통과, CLI 샘플 결과(`valid=6 rejected=4 written=5`)도 이전과 동일.
+
+**배운 것** — 프로젝트 폴더를 옮기거나 이름을 바꾸면 editable 설치를 다시 한다. `pip show <패키지>`의 `Editable project location`이 현재 경로와 같은지 보면 1초에 판별된다. 같은 이유로 Claude Code 메모리·세션 기록도 폴더 경로별로 저장돼 새 경로에서는 비어 보인다(옛 경로 키에서 복사하면 복구됨).
+
+---
+
 ## 템플릿
 
 ```
