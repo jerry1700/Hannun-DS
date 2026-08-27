@@ -29,6 +29,7 @@
 
 - **데이터 파트 폴더 구조 정리** — `data/` 바로 아래에 pyproject 가 있어 파트 전체가 DS1 프로젝트처럼 보였다. 처음엔 사람별 `ds1/`로 옮겼다가, DS1·DS2 가 패키지를 같이 쓰는 게 낫다고 보고 **`data/ds/` 공용**으로 조정. 개인 문서(WORKLOG·TROUBLESHOOTING·tickets·CODE_STYLE)는 `ds/docs/ds1/`, `ds/docs/ds2/`로, `ds/README.md`는 둘이 함께 쓰는 문서로 다시 씀. 파트 공통은 `data/docs/`(GIT_CONVENTION, contracts/).
 
+- **라벨링 파일럿 자료 정리** — 8/24에 6명이 30건을 독립 라벨한 결과(`Downloads/cluster_<이름>.csv`, `stance_report.html`)를 `docs/ds1/labeling/pilot-2026-08/`에 라벨만 남겨 옮김(`labels.csv` 180행, `articles_index.csv`). 기사 원문 `news30.jsonl`은 `.gitignore`. 집계: 이슈 묶음 쌍별 일치 95%(경계 2종 — 정상회담 3건을 한미훈련에 합칠지 3:3, 노경필 해명 2건 분리), 스탠스 일치 49%(만장일치 2/30). 스탠스가 갈린 건 논제를 무엇으로 잡는지가 안 정해져서 — 용산 이슈에서 두 사람 라벨이 정반대. 상세는 [labeling/pilot-2026-08/README.md](labeling/pilot-2026-08/README.md). 티켓 103 가이드의 경계 사례 재료.
 - **폴더 이름 변경 후 테스트 복구** — 로컬 폴더를 `hannun/`으로 바꾸자 editable 설치가 옛 경로를 가리켜 `import hannun` 실패. `pip install -e ".[dev]"` 재실행으로 복구 ([TS-007](TROUBLESHOOTING.md#ts-007)). 테스트 21개·flake8·CLI 샘플 적재(2회 투입 시 `skipped_existing=5`) 재확인.
 
 ### 결정

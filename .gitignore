@@ -12,6 +12,9 @@ gold/
 *.parquet
 *.parquet.tmp
 
+# 라벨링 자료 중 기사 원문. 라벨과 색인(csv)만 커밋한다
+docs/**/*.jsonl
+
 # 모델 가중치, 임베딩 캐시
 models/
 *.npy
