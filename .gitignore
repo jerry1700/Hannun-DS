@@ -1,0 +1,23 @@
+# 파이썬
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# 코드가 만드는 데이터. samples/ 만 커밋한다
+gold/
+*.parquet
+*.parquet.tmp
+
+# 모델 가중치, 임베딩 캐시
+models/
+*.npy
+
+# 로컬 환경
+.env
+*.log
+.vscode/
+.idea/
