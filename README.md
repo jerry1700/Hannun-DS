@@ -7,7 +7,8 @@
 DE 공통 기사 JSON
       │
       ▼  DS1
-STEP 0  ingest      검증 → Gold(parquet)                           99 ✔ / 100
+STEP 0  ingest      검증 → Gold(parquet)                           99 ✔
+        preprocess  Gold 원문 정제 → clean(content_clean)            100 ✔
 STEP 1  dedup       SHA-256 → MinHash/LSH → TF-IDF → Union-Find     10
 STEP 2  embedding   ko-sroberta (제목+리드)                           11
 STEP 3  clustering  UMAP + HDBSCAN + 이슈 ID 승계                     89 / 90 / 97
@@ -51,16 +52,23 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts\make_sample_data.py     # 샘플 입력 생성
 .\.venv\Scripts\python.exe -m pytest tests/ -v
 
-# STEP 0: 공통 기사 JSON → Gold
+# STEP 0: 공통 기사 JSON → Gold → clean
 .\.venv\Scripts\hannun-ingest.exe --input samples\articles_sample.jsonl --gold-root gold -v
+.\.venv\Scripts\hannun-preprocess.exe --gold-root gold -v
 ```
 
-Gold 읽기:
+Gold 와 정제 본문 읽기 (`article_id` 로 조인):
 
 ```python
 from hannun.ingest import GoldStore
-df = GoldStore("gold").read(start_date="2026-08-20", end_date="2026-08-21")
+from hannun.preprocess import CleanStore
+gold = GoldStore("gold").read(start_date="2026-08-20", end_date="2026-08-21")
+clean = CleanStore("gold").read(start_date="2026-08-20", end_date="2026-08-21")
+df = gold.merge(clean[["article_id", "content_clean", "clean_status"]], on="article_id")
 ```
+
+뒤 단계는 원문이 필요한 곳(STEP 1 의 SHA-256)만 `content` 를 쓰고 나머지는 `content_clean` 을 쓴다.
+규칙과 근거는 [docs/ds1/tickets/S15P21E105-100.md](docs/ds1/tickets/S15P21E105-100.md).
 
 ## 검사
 

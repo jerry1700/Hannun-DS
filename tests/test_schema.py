@@ -3,7 +3,9 @@ from datetime import timezone
 import pytest
 from pydantic import ValidationError
 
-from hannun.ingest.schema import CommonArticle, SourceType, article_id_matches, expected_article_id
+from hannun.ingest.schema import (
+    CommonArticle, SourceType, article_id_matches, expected_article_id, normalize_url,
+)
 
 
 def base(**overrides) -> dict:
@@ -85,4 +87,30 @@ def test_article_id_mismatch_detected():
 def test_article_id_prefix_optional():
     hex_only = expected_article_id("yonhap", "https://www.yna.co.kr/view/1").removeprefix("sha256:")
     a = CommonArticle.model_validate(base(article_id=hex_only.upper()))
+    assert article_id_matches(a)
+
+
+def test_html_source_type_accepted():
+    a = CommonArticle.model_validate(base(source_type="HTML"))
+    assert a.source_type is SourceType.HTML
+
+
+def test_tracking_params_and_fragment_do_not_change_id():
+    plain = "https://www.khan.co.kr/article/202608191645001/"
+    tracked = plain + "?utm_source=khan_rss&utm_medium=rss&utm_campaign=politic_news#top"
+    assert normalize_url(tracked) == plain
+    assert expected_article_id("khan", tracked) == expected_article_id("khan", plain)
+
+
+def test_identifying_query_is_kept_in_id():
+    a = "http://www.dt.co.kr/contents.html?article_no=2024010102109919607007"
+    b = "http://www.dt.co.kr/contents.html?article_no=2024010102109919607008"
+    assert normalize_url(a) == a
+    assert expected_article_id("dt", a) != expected_article_id("dt", b)
+
+
+def test_article_id_matches_after_tracking_param_added():
+    plain_id = expected_article_id("yonhap", "https://www.yna.co.kr/view/1")
+    tracked = "https://www.yna.co.kr/view/1?utm_source=rss"
+    a = CommonArticle.model_validate(base(url=tracked, article_id=plain_id))
     assert article_id_matches(a)
