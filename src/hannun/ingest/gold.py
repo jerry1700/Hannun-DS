@@ -166,12 +166,15 @@ class GoldStore:
         return sorted(dates)
 
     def _atomic_write(self, table, path):
-        # 임시 파일에 쓰고 교체한다. 쓰다가 죽어도 기존 파티션은 남는다.
-        # os.replace 는 Windows 에서도 원자적이다.
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        pq.write_table(table, tmp, compression="zstd")
-        os.replace(tmp, path)
+        write_parquet_atomic(table, path)
+
+
+def write_parquet_atomic(table, path):
+    """임시 파일에 쓰고 교체한다. 쓰다가 죽어도 기존 파티션은 남는다. os.replace 는 Windows 에서도 원자적이다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    pq.write_table(table, tmp, compression="zstd")
+    os.replace(tmp, path)
 
 
 def to_gold_row(article: CommonArticle, source_ref: str, ingested_at: datetime):
