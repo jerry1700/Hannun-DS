@@ -3,6 +3,7 @@
 import hashlib
 from datetime import timezone
 from enum import Enum
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
 
@@ -19,11 +20,17 @@ REQUIRED_TEXT_FIELDS = (
 )
 OPTIONAL_TEXT_FIELDS = ("author", "category_str", "thumbnail_url")
 ARTICLE_ID_PREFIX = "sha256:"
+# 해시 전에 URL 에서 떼는 파라미터. 같은 기사가 유입 경로마다 다른 id 를 받지 않게 한다.
+# 쿼리를 통째로 지우지 않는 이유: 디지털타임(contents.html?article_no=), 국민일보(view.asp?arcid=)
+# 처럼 쿼리가 곧 기사 번호인 언론사가 있다. de/schemas/article_v1.json 은 쿼리 전체 제거인데,
+# 그대로면 그 언론사 기사가 전부 같은 id 가 되어 DE 와 조정 중이다(docs/contracts).
+TRACKING_PARAMS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid")
 
 
 class SourceType(str, Enum):
     DATASET = "DATASET"
     RSS = "RSS"
+    HTML = "HTML"
 
 
 class CommonArticle(BaseModel):
@@ -80,17 +87,25 @@ class CommonArticle(BaseModel):
         return v.astimezone(timezone.utc)
 
 
+def normalize_url(url: str):
+    """article_id 해시에 쓰는 URL. 추적 파라미터와 프래그먼트를 떼고 나머지는 그대로 둔다."""
+    parts = urlsplit(url.strip())
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in TRACKING_PARAMS]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
 def expected_article_id(publisher_id: str, url: str):
-    """BE 규칙 SHA-256(publisher_id + "|" + url) 로 article_id 를 만든다."""
-    digest = hashlib.sha256(f"{publisher_id}|{url}".encode("utf-8")).hexdigest()
+    """SHA-256(publisher_id + "|" + 정규화 URL) 로 article_id 를 만든다."""
+    digest = hashlib.sha256(f"{publisher_id}|{normalize_url(url)}".encode("utf-8")).hexdigest()
     return ARTICLE_ID_PREFIX + digest
 
 
 def article_id_matches(article: CommonArticle):
-    """BE 가 준 article_id 가 해시 규칙과 맞는지.
+    """받은 article_id 가 우리 해시 규칙과 맞는지.
 
-    안 맞아도 리젝트하지 않고 Gold 에 표시만 한다. BE 가 해시 전에 URL 을
-    정규화(utm 제거 등)할 수도 있어서, 실데이터로 분포를 먼저 본다.
+    안 맞아도 리젝트하지 않고 Gold 에 표시만 한다. DE 의 정규화 규칙(쿼리 전체 제거)과
+    우리 규칙(추적 파라미터만 제거)이 다른 동안은 쿼리가 있는 URL 에서 False 가 나오는데,
+    그 비율이 곧 조정이 필요한 기사의 양이다.
     """
     given = article.article_id.removeprefix(ARTICLE_ID_PREFIX).strip().lower()
     expected = expected_article_id(article.publisher_id, article.url)
