@@ -2,7 +2,7 @@
 
 실제 변환은 DE 몫이다(docs/contracts/de-to-ds-article-json.md). 이 스크립트는 DE 변환이
 나오기 전에 우리 파이프라인을 실데이터로 돌려 보기 위한 것이고, 변환 규칙은 DE 스키마
-(de/schemas/article_v1.json)를 따르되 URL 정규화만 우리 규칙(hannun.ingest.schema)을 쓴다.
+(de/schemas/article_v1.json)를 따른다. URL 정규화는 DE 와 합의된 규칙(hannun.ingest.schema)이다.
 언론사별로 고정 seed 표본을 뽑아 한 번만 훑는다. 결과에는 기사 원문이 들어가므로
 local/ 아래에만 쓰고 커밋하지 않는다.
 
@@ -36,14 +36,6 @@ PUBLISHER_IDS = {
     "경기일보": "kyeonggi", "코메디닷컴": "kormedi", "미디어오늘": "mediatoday", "여성신문": "womennews",
     "비즈니스워치": "bizwatch", "국제신문": "kookje", "디지털데일리": "ddaily",
 }
-# 언론사 자체 분류 중 BE 카테고리로 바로 갈 수 있는 것만. 나머지는 DE 규칙대로 OTHER.
-CATEGORY_CODES = {
-    "정치": "POLITICS", "정치일반": "POLITICS", "국회/정당": "POLITICS", "대통령실": "POLITICS",
-    "경제": "ECONOMY", "경제일반": "ECONOMY", "경제 · 금융": "ECONOMY", "금융": "ECONOMY", "증권": "ECONOMY",
-    "산업": "ECONOMY", "사회": "SOCIETY", "사회일반": "SOCIETY", "사회 일반": "SOCIETY",
-    "국제": "WORLD", "국제일반": "WORLD", "세계": "WORLD", "스포츠": "SPORTS", "연예": "ENTERTAINMENT",
-    "문화": "CULTURE", "IT·과학": "IT_SCIENCE", "IT/과학": "IT_SCIENCE",
-}
 AMPM = re.compile(r"^(\d{4}-\d{2}-\d{2}) (오전|오후) (\d{1,2}):(\d{2}):(\d{2})$")
 DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y.%m.%d %H:%M")
 
@@ -75,17 +67,18 @@ def to_common(row, converted_at):
         "schema_version": "1.0",
         "article_id": expected_article_id(publisher_id, link),
         "publisher_id": publisher_id,
-        "publisher_name": company,
+        "company": company,
         "source_type": "DATASET",
-        "url": link,
+        "link": link,
         "title": title,
-        "content": article,
-        "author": reporter.strip() or None,
-        "category": CATEGORY_CODES.get(category.strip(), "OTHER"),
+        "article": article,
+        "reporter": reporter.strip() or None,
+        # 개편된 계약(2026-08-31): category 는 코드 enum 이 아니라 언론사 원문 문자열, 빈값만 OTHER
+        "category": category.strip() or "OTHER",
         "category_str": category_str.strip() or None,
         "thumbnail_url": None,
         "language": "ko",
-        "published_at": published_at,
+        "published": published_at,
         "crawled_at": converted_at,
     }
 

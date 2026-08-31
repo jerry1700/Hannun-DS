@@ -1,11 +1,11 @@
-"""공통 기사 JSON(BE 문서 §3, schema_version 1.0)의 검증 모델."""
+"""공통 기사 JSON(de/schemas/article_v1.json, schema_version 1.0)의 검증 모델."""
 
 import hashlib
 from datetime import timezone
 from enum import Enum
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
+from pydantic import AliasChoices, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 REQUIRED_TEXT_FIELDS = (
     "schema_version",
@@ -22,9 +22,12 @@ OPTIONAL_TEXT_FIELDS = ("author", "category_str", "thumbnail_url")
 ARTICLE_ID_PREFIX = "sha256:"
 # 해시 전에 URL 에서 떼는 파라미터. 같은 기사가 유입 경로마다 다른 id 를 받지 않게 한다.
 # 쿼리를 통째로 지우지 않는 이유: 디지털타임(contents.html?article_no=), 국민일보(view.asp?arcid=)
-# 처럼 쿼리가 곧 기사 번호인 언론사가 있다. de/schemas/article_v1.json 은 쿼리 전체 제거인데,
-# 그대로면 그 언론사 기사가 전부 같은 id 가 되어 DE 와 조정 중이다(docs/contracts).
-TRACKING_PARAMS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid")
+# 처럼 쿼리가 곧 기사 번호인 언론사가 있다. 목록과 "남은 파라미터 정렬"은 DE 와 합의된
+# 확정 규칙(2026-08-31, de/schemas/article_v1.json) — DE 실측 220만 건에서 식별자 손실 0%.
+TRACKING_PARAMS = (
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "igshid", "page", "date", "ref", "from",
+)
 
 
 class SourceType(str, Enum):
@@ -45,17 +48,19 @@ class CommonArticle(BaseModel):
     schema_version: str
     article_id: str
     publisher_id: str
-    publisher_name: str
+    # DE 가 article_v1 필드명을 데이터셋 8필드식으로 개편했다(2026-08-31). 속성명은 Gold
+    # 컬럼이자 하류(DS2) 계약이라 그대로 두고, 입력 경계에서 두 이름을 모두 받아 흡수한다.
+    publisher_name: str = Field(validation_alias=AliasChoices("company", "publisher_name"))
     source_type: SourceType
-    url: str
+    url: str = Field(validation_alias=AliasChoices("link", "url"))
     title: str
-    content: str
-    author: str | None = None
+    content: str = Field(validation_alias=AliasChoices("article", "content"))
+    author: str | None = Field(None, validation_alias=AliasChoices("reporter", "author"))
     category: str
     category_str: str | None = None
     thumbnail_url: str | None = None
     language: str
-    published_at: AwareDatetime
+    published_at: AwareDatetime = Field(validation_alias=AliasChoices("published", "published_at"))
 
     @field_validator(*REQUIRED_TEXT_FIELDS, mode="before")
     @classmethod
@@ -88,10 +93,14 @@ class CommonArticle(BaseModel):
 
 
 def normalize_url(url: str):
-    """article_id 해시에 쓰는 URL. 추적 파라미터와 프래그먼트를 떼고 나머지는 그대로 둔다."""
+    """article_id 해시에 쓰는 URL. 추적 파라미터와 프래그먼트를 떼고 남은 쿼리는 정렬한다.
+
+    정렬하는 이유: 같은 기사라도 크롤 경로에 따라 파라미터 순서가 다를 수 있고,
+    순서가 다르면 해시가 달라진다. 규칙 전체가 DE 와 합의된 확정본이다.
+    """
     parts = urlsplit(url.strip())
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in TRACKING_PARAMS]
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in TRACKING_PARAMS]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(sorted(kept)), ""))
 
 
 def expected_article_id(publisher_id: str, url: str):
@@ -103,9 +112,8 @@ def expected_article_id(publisher_id: str, url: str):
 def article_id_matches(article: CommonArticle):
     """받은 article_id 가 우리 해시 규칙과 맞는지.
 
-    안 맞아도 리젝트하지 않고 Gold 에 표시만 한다. DE 의 정규화 규칙(쿼리 전체 제거)과
-    우리 규칙(추적 파라미터만 제거)이 다른 동안은 쿼리가 있는 URL 에서 False 가 나오는데,
-    그 비율이 곧 조정이 필요한 기사의 양이다.
+    안 맞아도 리젝트하지 않고 Gold 에 표시만 한다. 정규화 규칙은 DE 와 합의됐으므로
+    False 는 규칙 불일치가 아니라 개별 데이터의 문제(id 재계산 누락 등)를 가리키는 신호다.
     """
     given = article.article_id.removeprefix(ARTICLE_ID_PREFIX).strip().lower()
     expected = expected_article_id(article.publisher_id, article.url)
