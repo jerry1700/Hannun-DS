@@ -21,6 +21,7 @@ dev = ["pytest>=8", "flake8>=7"]
 [project.scripts]
 hannun-ingest = "hannun.ingest.cli:main"
 hannun-preprocess = "hannun.preprocess.cli:main"
+hannun-dedup = "hannun.dedup.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
