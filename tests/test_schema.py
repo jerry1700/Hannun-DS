@@ -114,3 +114,55 @@ def test_article_id_matches_after_tracking_param_added():
     tracked = "https://www.yna.co.kr/view/1?utm_source=rss"
     a = CommonArticle.model_validate(base(url=tracked, article_id=plain_id))
     assert article_id_matches(a)
+
+
+def base_v2(**overrides) -> dict:
+    """개편된 article_v1(2026-08-31) 필드명 — DE 가 실제로 보내는 모양."""
+    d = {
+        "schema_version": "1.0",
+        "article_id": expected_article_id("yonhap", "https://www.yna.co.kr/view/1"),
+        "publisher_id": "yonhap",
+        "company": "연합뉴스",
+        "source_type": "RSS",
+        "link": "https://www.yna.co.kr/view/1",
+        "title": "제목",
+        "article": "본문",
+        "reporter": "홍길동",
+        "category": "사회",
+        "category_str": "뉴스 > 사회",
+        "thumbnail_url": None,
+        "language": "ko",
+        "published": "2026-08-20T05:30:00Z",
+        "crawled_at": "2026-08-20T05:31:00Z",
+    }
+    d.update(overrides)
+    return d
+
+
+def test_renamed_fields_map_to_internal_names():
+    a = CommonArticle.model_validate(base_v2())
+    assert a.publisher_name == "연합뉴스"
+    assert a.url == "https://www.yna.co.kr/view/1"
+    assert a.content == "본문"
+    assert a.author == "홍길동"
+    assert a.published_at.tzinfo == timezone.utc
+    assert article_id_matches(a)
+
+
+def test_renamed_payload_missing_body_rejected():
+    with pytest.raises(ValidationError):
+        CommonArticle.model_validate({k: v for k, v in base_v2().items() if k != "article"})
+
+
+def test_new_tracking_params_do_not_change_id():
+    plain = "https://n.news.example.com/article/001/0015000000"
+    tracked = plain + "?ref=main&from=news&igshid=abc&page=2&date=20260820"
+    assert normalize_url(tracked) == plain
+    assert expected_article_id("ex", tracked) == expected_article_id("ex", plain)
+
+
+def test_query_order_does_not_change_id():
+    a = "https://news.sbs.co.kr/news/endPage.do?news_id=N9001&plink=COPYPASTE"
+    b = "https://news.sbs.co.kr/news/endPage.do?plink=COPYPASTE&news_id=N9001"
+    assert normalize_url(a) == normalize_url(b)
+    assert expected_article_id("sbs", a) == expected_article_id("sbs", b)
