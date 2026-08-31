@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from hannun.dedup import DedupStore, dedup
+from hannun.dedup import DedupConfig, DedupStore, dedup
 from hannun.ingest import GoldStore, ingest
 from hannun.ingest.schema import expected_article_id
 from hannun.preprocess import CleanStore, PreprocessConfig, preprocess
@@ -34,9 +34,9 @@ ARTICLES = [
 ]
 
 
-def build_stores(tmp_path):
+def build_stores(tmp_path, articles=ARTICLES):
     lines = []
-    for alias, publisher, published, content in ARTICLES:
+    for alias, publisher, published, content in articles:
         url = f"https://news.example.com/{alias}"
         lines.append(json.dumps({
             "schema_version": "1.0",
@@ -65,7 +65,7 @@ def build_stores(tmp_path):
 
 
 def alias_id(alias):
-    publisher = next(p for a, p, _, _ in ARTICLES if a == alias)
+    publisher = next(p for a, p, _, _ in ARTICLES + SHORT_PAIR if a == alias)
     return expected_article_id(publisher, f"https://news.example.com/{alias}")
 
 
@@ -135,3 +135,35 @@ def test_stats_add_up(tmp_path):
     assert stats.duplicates == 3
     assert stats.singles == 2  # unrelated, next_day (대표 original 은 count 4 라 단독이 아니다)
     assert stats.to_dict()["rows"] == 6
+
+
+# 본문이 저작권 꼬리 한 줄뿐인 속보 쌍 — 기사의 실제 내용은 제목에 있고 본문만 서로 같다
+SHORT_BODY = "ⓒ 예제뉴스. 무단 전재 및 재배포 금지."
+SHORT_PAIR = [
+    ("breaking_fire", "asiae", "2026-08-20T05:00:00Z", SHORT_BODY),
+    ("breaking_north", "asiae", "2026-08-20T06:00:00Z", SHORT_BODY),
+]
+
+
+def test_short_bodies_are_never_folded(tmp_path):
+    gold, clean, store = build_stores(tmp_path, ARTICLES + SHORT_PAIR)
+    stats = dedup(gold, clean, store)
+    df = store.read().set_index("article_id")
+
+    assert stats.excluded_short == 2
+    for alias in ("breaking_fire", "breaking_north"):
+        row = df.loc[alias_id(alias)]
+        assert pd.isna(row.duplicate_of) and pd.isna(row.method), alias
+        assert row.duplicate_count == 1, alias
+
+
+def test_min_fold_len_gate_is_what_prevents_folding(tmp_path):
+    gold, clean, store = build_stores(tmp_path, ARTICLES + SHORT_PAIR)
+    stats = dedup(gold, clean, store, DedupConfig(min_fold_len=0))
+    df = store.read().set_index("article_id")
+
+    # 문턱을 없애면 같은 쌍이 sha256 으로 접힌다 — 위 테스트의 제외가 문턱 덕분임을 증명
+    assert stats.excluded_short == 0
+    later = df.loc[alias_id("breaking_north")]
+    assert later.duplicate_of == alias_id("breaking_fire")
+    assert later.method == "sha256"
