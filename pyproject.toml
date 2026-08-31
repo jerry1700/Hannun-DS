@@ -11,6 +11,8 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=15",
     "pydantic>=2.6",
+    "datasketch>=1.6",
+    "scikit-learn>=1.4",
 ]
 
 [project.optional-dependencies]
