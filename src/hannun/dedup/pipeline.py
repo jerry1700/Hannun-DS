@@ -18,6 +18,10 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class DedupConfig:
+    # 정제본이 이보다 짧으면 접지 않는다. 본문이 저작권 꼬리뿐인 속보·포토·영상 기사는
+    # 실제 내용이 제목에 있는데 본문이 같다는 이유로 서로 접혀 사라진다 — 5,105건 실측에서
+    # 나온 오탐 전부가 이 유형이었다. 100 은 크롤러 발행 기준·정제 short 기준과 같은 값이다.
+    min_fold_len: int = 100
     candidates: CandidateConfig = field(default_factory=CandidateConfig)
     verify: VerifyConfig = field(default_factory=VerifyConfig)
     groups: GroupConfig = field(default_factory=GroupConfig)
@@ -28,6 +32,7 @@ class DedupStats:
     window_start: str | None = None
     window_end: str | None = None
     rows: int = 0
+    excluded_short: int = 0
     exact_groups: int = 0
     exact_duplicates: int = 0
     candidate_pairs: int = 0
@@ -50,7 +55,8 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
 
     범위가 곧 창이다 — 쪼개서 두 번 돌리면 경계를 넘는 쌍(자정 직전·직후 기사)을 놓치므로
     항상 창 하나를 통째로 돌린다. 완전 중복은 원문으로, 근사 중복은 정제본으로 보고
-    정제본이 없는 기사는 원문으로 대신한다.
+    정제본이 없는 기사는 원문으로 대신한다. 정제본이 min_fold_len 미만인 기사는
+    판정 자체에서 제외해 단독으로 남긴다.
     """
     config = config or DedupConfig()
     stats = DedupStats()
@@ -67,11 +73,15 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
     rows = _load_rows(gold, clean, dates)
     stats.rows = len(rows)
 
-    exact = find_exact_duplicates(rows)
+    # 본문이 짧은 기사는 "같은 기사"라 볼 근거 자체가 없으므로 접지도, 대표가 되지도 않는다
+    foldable = [row for row in rows if row["fold_len"] >= config.min_fold_len]
+    stats.excluded_short = len(rows) - len(foldable)
+
+    exact = find_exact_duplicates(foldable)
     stats.exact_groups = exact.groups
     stats.exact_duplicates = len(exact.duplicate_of)
 
-    survivors = [row for row in rows if row["article_id"] not in exact.duplicate_of]
+    survivors = [row for row in foldable if row["article_id"] not in exact.duplicate_of]
     candidates = find_candidate_pairs(
         [{"article_id": row["article_id"], "text": row["text"]} for row in survivors],
         config.candidates,
@@ -132,13 +142,17 @@ def _load_rows(gold, clean, dates):
     for article_id, publisher_id, published_date, content, published_at in zip(
             *(table.column(c).to_pylist()
               for c in ("article_id", "publisher_id", "published_date", "content", "published_at"))):
+        clean_text = clean_of.get(article_id)
         rows.append({
             "article_id": article_id,
             "publisher_id": publisher_id,
             "published_date": published_date,
             "content": content,
             "published_at": published_at,
-            "text": clean_of.get(article_id) or content,
+            "text": clean_text or content,
+            # 접기 자격은 정제본 길이로 판단한다 — 정제하니 비어 버린 기사는 0 으로 제외되고,
+            # 정제본이 아예 없으면(전처리 미수행) 원문 길이로 대신한다
+            "fold_len": len(clean_text) if clean_text is not None else len(content),
         })
     return rows
 
