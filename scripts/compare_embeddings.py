@@ -16,6 +16,7 @@
 """
 
 import argparse
+import csv
 import json
 import random
 import time
@@ -80,13 +81,17 @@ def duplicate_and_random_pairs(rows, sample_cap):
     return confirmed, randoms
 
 
-def encode(spec, texts, threads, batch_size):
-    """모델 하나로 전부 인코딩하고 (정규화 벡터, 문서/초) 를 돌려준다."""
+def load_model(spec, threads):
+    # torch 임포트를 함수 안에 두는 이유: 쌍 생성 등 다른 기능은 torch 없는 venv 에서도 돈다
     import torch
     from sentence_transformers import SentenceTransformer
 
     torch.set_num_threads(threads)
-    model = SentenceTransformer(spec.hf_id, device="cpu")
+    return SentenceTransformer(spec.hf_id, device="cpu")
+
+
+def encode(model, spec, texts, batch_size):
+    """인코딩하고 (정규화 벡터, 문서/초) 를 돌려준다."""
     payload = [spec.passage_prefix + t for t in texts]
     t0 = time.monotonic()
     vectors = model.encode(payload, batch_size=batch_size, normalize_embeddings=True,
@@ -97,6 +102,63 @@ def encode(spec, texts, threads, batch_size):
 
 def pair_cosines(vectors, index_of, pairs):
     return [float(vectors[index_of[a]] @ vectors[index_of[b]]) for a, b in pairs]
+
+
+def load_pilot(articles_path, labels_path, body_chars, min_agree):
+    """파일럿 30건 본문과 합의 정답을 만든다.
+
+    라벨의 이슈 번호는 라벨러마다 제각각이라 그대로 비교할 수 없다. 대신 "두 기사를
+    같은 이슈로 묶은 라벨러 수"를 세어 min_agree 명 이상이면 같은 이슈로 잇고,
+    연결 요소를 합의 이슈로 삼는다.
+    """
+    bodies = {}
+    with open(articles_path, encoding="utf-8") as f:
+        for line in f:
+            record = json.loads(line)
+            bodies[record["article_id"]] = build_input(record["title"], record["body"], body_chars)
+
+    by_labeler = {}
+    # utf-8-sig: 엑셀을 거친 CSV 는 BOM 이 붙어 첫 키가 '﻿article_id' 가 된다
+    with open(labels_path, encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            by_labeler.setdefault(row["labeler"], {})[row["article_id"]] = row["cluster"]
+
+    ids = sorted(bodies)
+    together = {}
+    for clusters in by_labeler.values():
+        for i, a in enumerate(ids):
+            for b in ids[i + 1:]:
+                if a in clusters and b in clusters and clusters[a] == clusters[b]:
+                    together[(a, b)] = together.get((a, b), 0) + 1
+
+    neighbors = {a: set() for a in ids}
+    for (a, b), votes in together.items():
+        if votes >= min_agree:
+            neighbors[a].add(b)
+            neighbors[b].add(a)
+    gold, group = {}, 0
+    for seed in ids:
+        if seed in gold:
+            continue
+        stack = [seed]
+        while stack:
+            node = stack.pop()
+            if node in gold:
+                continue
+            gold[node] = group
+            stack.extend(neighbors[node])
+        group += 1
+    return {"ids": ids, "texts": [bodies[a] for a in ids],
+            "gold": [gold[a] for a in ids], "n_issues": group}
+
+
+def pilot_ari(vectors, gold):
+    from sklearn.cluster import AgglomerativeClustering
+    from sklearn.metrics import adjusted_rand_score
+
+    predicted = AgglomerativeClustering(n_clusters=len(set(gold)), metric="cosine",
+                                        linkage="average").fit_predict(vectors)
+    return adjusted_rand_score(gold, predicted)
 
 
 def main():
@@ -110,6 +172,9 @@ def main():
     p.add_argument("--pair-cap", type=int, default=200)
     p.add_argument("--max-articles", type=int, default=0,
                    help="0 이면 하루치 전체. 실측 밀도에서 쌍 생성이 수 분 걸리므로 반복 실험은 줄여서")
+    p.add_argument("--pilot", default="", help="news30.jsonl 경로. 주면 이슈 재현(ARI) 을 계산")
+    p.add_argument("--pilot-labels", default="docs/ds1/labeling/pilot-2026-08/labels.csv")
+    p.add_argument("--pilot-agree", type=int, default=4, help="같은 이슈로 인정할 최소 라벨러 수(6명 중)")
     p.add_argument("--out", default="local/embed_compare.json")
     args = p.parse_args()
 
@@ -123,11 +188,18 @@ def main():
     texts = [build_input(t, c, args.body_chars) for t, c in zip(rows.title, rows.content_clean)]
     index_of = {a: i for i, a in enumerate(rows.article_id)}
 
+    pilot = None
+    if args.pilot:
+        pilot = load_pilot(args.pilot, args.pilot_labels, args.body_chars, args.pilot_agree)
+        print(f"파일럿 {len(pilot['ids'])}건 / 합의 이슈 {pilot['n_issues']}개 (기준 {args.pilot_agree}/6)")
+
     report = {"date": args.date, "articles": len(rows), "confirmed_pairs": len(confirmed),
-              "threads": args.threads, "body_chars": args.body_chars, "models": {}}
+              "threads": args.threads, "body_chars": args.body_chars,
+              "pilot_issues": pilot["n_issues"] if pilot else None, "models": {}}
     for name in args.models:
         spec = MODELS[name]
-        vectors, docs_per_s = encode(spec, texts, args.threads, args.batch_size)
+        model = load_model(spec, args.threads)
+        vectors, docs_per_s = encode(model, spec, texts, args.batch_size)
         dup = pair_cosines(vectors, index_of, confirmed)
         rnd = pair_cosines(vectors, index_of, randoms)
         entry = {
@@ -140,6 +212,9 @@ def main():
         # 간격 = 중복 쌍 하위 10% 와 무작위 쌍 상위 10% 사이. 양수여야 문턱을 그을 수 있다
         if dup and rnd:
             entry["separation"] = round(entry["dup_cos_p10"] - entry["random_cos_p90"], 4)
+        if pilot:
+            pilot_vectors, _ = encode(model, spec, pilot["texts"], args.batch_size)
+            entry["pilot_ari"] = round(pilot_ari(pilot_vectors, pilot["gold"]), 4)
         report["models"][name] = entry
         print(f"{name}: {json.dumps(entry, ensure_ascii=False)}")
 
