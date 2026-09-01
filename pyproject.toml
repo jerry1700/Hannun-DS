@@ -17,11 +17,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "flake8>=7"]
+# 선택 그룹으로 두는 이유: torch 가 무거워서(수백 MB) 임베딩을 돌리지 않는
+# 환경(DS2 등)에까지 강제하지 않는다. 실행 환경에서만 pip install -e ".[embedding]"
+embedding = ["sentence-transformers>=3"]
 
 [project.scripts]
 hannun-ingest = "hannun.ingest.cli:main"
 hannun-preprocess = "hannun.preprocess.cli:main"
 hannun-dedup = "hannun.dedup.cli:main"
+hannun-embed = "hannun.embedding.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
