@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from hannun.enrichment.event_name import generate_event_name
 from hannun.enrichment.pipeline import enrich_dummy
 from hannun.enrichment.schema import validate_ds2_output
 
@@ -47,3 +48,13 @@ def test_invalid_stance_confidence_raises_error(issues):
 
     with pytest.raises(ValueError):
         validate_ds2_output(result)
+
+
+def test_event_name_is_generated_by_event_name_module(issues):
+    issue = issues[0]
+
+    result = enrich_dummy(issue)
+
+    assert result["event_name"] == generate_event_name(issue)
+    assert result["event_name"].strip()
+    assert "[DUMMY]" not in result["event_name"]
