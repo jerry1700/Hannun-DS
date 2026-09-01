@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .event_name import generate_event_name
 from .schema import validate_ds1_issue, validate_ds2_output
 
 
@@ -18,9 +19,6 @@ def enrich_dummy(issue_data: dict[str, Any]) -> dict[str, Any]:
     validate_ds1_issue(issue_data)
 
     issue_cluster_id = issue_data["issue_cluster_id"]
-
-    # DS1 대표 제목을 더미 event_name으로 임시 사용
-    representative_title = issue_data.get("representative_title", "")
 
     # DS1 keywords가 비어 있을 수 있으므로 더미값 허용
     input_keywords = issue_data.get("keywords") or []
@@ -40,7 +38,7 @@ def enrich_dummy(issue_data: dict[str, Any]) -> dict[str, Any]:
     # DS2 더미 출력 생성
     result = {
         "issue_cluster_id": issue_cluster_id,
-        "event_name": representative_title or "[DUMMY] 이슈명",
+        "event_name": generate_event_name(issue_data),
         "keywords": input_keywords or ["dummy-keyword"],
         "fact_summary": [
             "[DUMMY] 공통 사실 요약 1",
