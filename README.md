@@ -9,8 +9,8 @@ DE 공통 기사 JSON
       ▼  DS1
 STEP 0  ingest      검증 → Gold(parquet)                           99 ✔
         preprocess  Gold 원문 정제 → clean(content_clean)            100 ✔
-STEP 1  dedup       SHA-256 → MinHash/LSH → TF-IDF → Union-Find     10
-STEP 2  embedding   ko-sroberta (제목+리드)                           11
+STEP 1  dedup       SHA-256 → MinHash/LSH → TF-IDF 검증 → 그룹       10 ✔
+STEP 2  embedding   e5-small-ko-v2 (제목+본문 앞) → embedding 테이블   11 ✔
 STEP 3  clustering  UMAP + HDBSCAN + 이슈 ID 승계                     89 / 90 / 97
 STEP 4  quality     노이즈 구제 · 어그로 판정 · 화제성 점수             93 / 91
       │
@@ -55,6 +55,14 @@ python -m venv .venv
 # STEP 0: 공통 기사 JSON → Gold → clean
 .\.venv\Scripts\hannun-ingest.exe --input samples\articles_sample.jsonl --gold-root gold -v
 .\.venv\Scripts\hannun-preprocess.exe --gold-root gold -v
+
+# STEP 1: 중복 검출 → dedup 테이블
+.\.venv\Scripts\hannun-dedup.exe --gold-root gold -v
+
+# STEP 2: 임베딩 → embedding 테이블. torch 가 필요해서 선택 그룹이다.
+# torch 는 파이썬 3.14 를 아직 지원하지 않는다 — 임베딩을 돌릴 venv 는 3.12(EC2 와 동일)로 만든다.
+.\.venv\Scripts\python.exe -m pip install -e ".[embedding]"
+.\.venv\Scripts\hannun-embed.exe --gold-root gold -v
 ```
 
 Gold 와 정제 본문 읽기 (`article_id` 로 조인):
@@ -69,6 +77,8 @@ df = gold.merge(clean[["article_id", "content_clean", "clean_status"]], on="arti
 
 뒤 단계는 원문이 필요한 곳(STEP 1 의 SHA-256)만 `content` 를 쓰고 나머지는 `content_clean` 을 쓴다.
 규칙과 근거는 [docs/ds1/tickets/S15P21E105-100.md](docs/ds1/tickets/S15P21E105-100.md).
+`dedup/`(`duplicate_of` — 접힌 기사의 대표)과 `embedding/`(`vector` — 대표 기사의 384차원 벡터)도
+같은 패턴이다: `hannun.dedup.DedupStore`, `hannun.embedding.EmbeddingStore` 로 읽고 `article_id` 로 조인한다.
 
 ## 검사
 
