@@ -1,8 +1,9 @@
-"""확정 쌍을 그룹으로 묶고 대표를 정한다 — Union-Find 와 그룹 상한.
+"""확정 쌍을 별(star) 그룹으로 묶고 대표를 정한다.
 
-A~B, B~C 가 각각 중복이면 A·B·C 를 한 그룹으로 본다(Union-Find). 다만 이 연쇄가 길어지면
-서로 전혀 다른 기사가 한 그룹에 들어올 수 있어서, 그룹이 상한을 넘으면 대표와 직접
-확정된 쌍만 남기고 나머지는 자기들끼리 다시 묶는다(설계의 Star 재계산).
+접히는 기사는 반드시 대표와 **직접 확정된 쌍**이어야 한다. 처음에는 연쇄(A~B~C)도
+한 그룹으로 접었지만, 2023 실측 표본 280쌍 전수 검수에서 연쇄로만 이어진 접힘의
+정탐률이 35.7%(직접 검증된 접힘은 89~96%)로 나와 연쇄 전파를 없앴다 — 대표의
+직접 이웃만 접고, 나머지는 자기들끼리 다시 별을 만든다.
 
 지우는 것은 없다. 중복 기사에는 duplicate_of(대표 article_id)를, 대표에는
 duplicate_count(자기 포함 묶인 수)를 남긴다 — STEP 4 가 화제성 신호로 쓴다.
@@ -39,7 +40,7 @@ def build_groups(pairs: set[tuple[str, str]], order: dict[str, tuple], config: G
         neighbors[b].add(a)
 
     for component in _components(neighbors):
-        for group in _split_if_oversized(component, neighbors, order, config.max_group_size, result):
+        for group in _star_groups(component, neighbors, order, config.max_group_size, result):
             if len(group) < 2:
                 continue
             representative = min(group, key=lambda article_id: order[article_id])
@@ -68,15 +69,16 @@ def _components(neighbors):
         yield component
 
 
-def _split_if_oversized(component, neighbors, order, cap, result):
-    if len(component) <= cap:
-        yield component
-        return
-    # 대표와 직접 확정된 쌍만 남긴다. 연쇄(A~B~C)로만 이어진 기사는 대표와 직접 비교된 적이
-    # 없으므로 떼어내고, 남은 것들끼리 다시 묶는다.
-    result.split_oversized += 1
+def _star_groups(component, neighbors, order, cap, result):
+    """대표 + 대표와 직접 확정된 쌍만 한 그룹으로. 나머지는 자기들끼리 다시 별을 만든다.
+
+    연쇄로만 이어진 기사는 대표와 직접 비교된 적이 없다 — 검수에서 그런 접힘의
+    3건 중 2건이 다른 기사였다. 상한은 직접 이웃이 폭주할 때의 안전판으로만 남는다.
+    """
     representative = min(component, key=lambda article_id: order[article_id])
     star = [representative] + sorted(neighbors[representative] & set(component))
+    if len(star) > cap:
+        result.split_oversized += 1
     yield star[:cap]
 
     rest = set(component) - set(star[:cap])
@@ -84,4 +86,4 @@ def _split_if_oversized(component, neighbors, order, cap, result):
         return
     rest_neighbors = {node: neighbors[node] & rest for node in rest}
     for sub in _components(rest_neighbors):
-        yield from _split_if_oversized(sub, rest_neighbors, order, cap, result)
+        yield from _star_groups(sub, rest_neighbors, order, cap, result)
