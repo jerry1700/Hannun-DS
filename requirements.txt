@@ -5,3 +5,4 @@ datasketch>=1.6
 scikit-learn>=1.4
 pytest>=8
 # 임베딩(hannun-embed) 실행 환경에서만: pip install -e ".[embedding]"  (torch 가 무거워 기본 제외)
+# 군집화(hannun-cluster) 실행 환경에서만: pip install -e ".[clustering]"  (umap/numba 가 무거워 기본 제외)
