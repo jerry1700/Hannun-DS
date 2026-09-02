@@ -167,6 +167,8 @@ def _merge(rows, exact, near, pair_method):
     for article_id, representative in near.duplicate_of.items():
         final_of[article_id] = representative
         pair = (article_id, representative) if article_id < representative else (representative, article_id)
+        # 별 그룹핑이라 접힌 기사는 항상 대표와 직접 확정된 쌍이 있다. "chained" 는
+        # 그 전제가 깨졌을 때를 위한 방어값 — 실데이터에 나타나면 버그다.
         method[article_id] = pair_method.get(pair, "chained")
     for article_id, representative in exact.duplicate_of.items():
         final_of[article_id] = near.duplicate_of.get(representative, representative)
