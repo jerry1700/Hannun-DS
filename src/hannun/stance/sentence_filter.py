@@ -34,7 +34,7 @@ def split_sentences(text: str) -> list[str]:
         return []
 
     sentences = re.split(
-        r"(?<=[.!?。！？])\s+|\n+",
+        r"(?<=[.!?。！？])(?:\s+|(?=[가-힣]))|\n+",
         text.strip(),
     )
 
