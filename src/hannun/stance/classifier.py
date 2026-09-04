@@ -563,3 +563,34 @@ def classify_stance(target: str, content: str) -> dict:
             3,
         ),
     }
+
+
+def select_stance_evidence_sentences(
+    target: str,
+    content: str,
+    stance: str,
+) -> list[str]:
+    """최종 stance와 같은 방향의 Target 관련 근거 문장을 반환한다."""
+
+    if stance not in {
+        "positive",
+        "neutral",
+        "negative",
+    }:
+        raise ValueError(
+            f"invalid stance: {stance}"
+        )
+
+    selected = _select_target_sentences(
+        target,
+        content,
+    )
+
+    return [
+        sentence
+        for sentence in selected
+        if _sentence_direction(
+            target,
+            sentence,
+        ) == stance
+    ]
