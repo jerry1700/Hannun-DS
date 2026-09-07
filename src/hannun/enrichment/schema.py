@@ -11,6 +11,7 @@ DS1_ARTICLE_REQUIRED_FIELDS = {
     "article_id",
     "title",
     "content",
+    "publisher_name",
 }
 
 DS2_REQUIRED_FIELDS = {

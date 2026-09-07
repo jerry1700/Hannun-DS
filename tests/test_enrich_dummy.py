@@ -58,3 +58,25 @@ def test_event_name_is_generated_by_event_name_module(issues):
     assert result["event_name"] == generate_event_name(issue)
     assert result["event_name"].strip()
     assert "[DUMMY]" not in result["event_name"]
+
+
+def test_missing_publisher_name_raises_error():
+    from hannun.enrichment.schema import validate_ds1_issue
+
+    issue = {
+        "issue_cluster_id": "issue-test",
+        "representative_title": "테스트 이슈",
+        "articles": [
+            {
+                "article_id": "article-1",
+                "title": "테스트 기사",
+                "content": "테스트 본문",
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="publisher_name",
+    ):
+        validate_ds1_issue(issue)

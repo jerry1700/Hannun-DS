@@ -75,15 +75,15 @@ def has_numeric_conflict(sentence_a: str, sentence_b: str) -> bool:
         sentence_b,
     )
 
-    same_fact = is_same_fact_candidate(
+    if not numbers_a and not numbers_b:
+        return False
+
+    if numbers_a == numbers_b:
+        return False
+
+    return is_same_fact_candidate(
         sentence_a,
         sentence_b,
-    )
-
-    return (
-        same_fact
-        and numbers_a != numbers_b
-        and bool(numbers_a or numbers_b)
     )
 
 
@@ -105,48 +105,139 @@ def has_conflict_with_others(
     return False
 
 
+def _normalized_similarity_at_least(
+    normalized_a: str,
+    normalized_b: str,
+    threshold: float = 0.8,
+) -> bool:
+    """정확한 유사도 계산 전 상한 검사를 사용해 빠르게 탈락시킨다."""
+
+    matcher = SequenceMatcher(
+        None,
+        normalized_a,
+        normalized_b,
+    )
+
+    if matcher.real_quick_ratio() < threshold:
+        return False
+
+    if matcher.quick_ratio() < threshold:
+        return False
+
+    return matcher.ratio() >= threshold
+
+
 def merge_similar_evidence(
     evidence_list: list[dict],
 ) -> list[dict]:
     """표현이 유사한 동일 사실 후보의 출처를 하나로 합친다."""
 
+    normalized_by_sentence = {
+        evidence["sentence"]: normalize_numbers(
+            normalize_text(evidence["sentence"])
+        )
+        for evidence in evidence_list
+    }
+
+    numbers_by_sentence = {
+        evidence["sentence"]: re.findall(
+            r"\d+(?:,\d{3})*(?:\.\d+)?",
+            evidence["sentence"],
+        )
+        for evidence in evidence_list
+    }
+
     merged = []
 
     for evidence in evidence_list:
+        sentence = evidence["sentence"]
         matched = False
 
         for group in merged:
-            if (
-                is_same_fact_candidate(
-                    evidence["sentence"],
-                    group["sentence"],
-                )
-                and not has_numeric_conflict(
-                    evidence["sentence"],
-                    group["sentence"],
-                )
+            group_sentence = group["sentence"]
+
+            if not _normalized_similarity_at_least(
+                normalized_by_sentence[sentence],
+                normalized_by_sentence[group_sentence],
             ):
-                existing_article_ids = {
-                    source["article_id"]
-                    for source in group["sources"]
-                }
+                continue
 
-                for source in evidence["sources"]:
-                    if source["article_id"] not in existing_article_ids:
-                        group["sources"].append(source)
+            numbers_a = numbers_by_sentence[sentence]
+            numbers_b = numbers_by_sentence[group_sentence]
 
-                matched = True
-                break
+            if (
+                numbers_a != numbers_b
+                and bool(numbers_a or numbers_b)
+            ):
+                continue
+
+            existing_article_ids = {
+                source["article_id"]
+                for source in group["sources"]
+            }
+
+            for source in evidence["sources"]:
+                if source["article_id"] not in existing_article_ids:
+                    group["sources"].append(source)
+
+            matched = True
+            break
 
         if not matched:
             merged.append(
                 {
-                    "sentence": evidence["sentence"],
+                    "sentence": sentence,
                     "sources": list(evidence["sources"]),
                 }
             )
 
     return merged
+
+
+def _find_conflicting_indices(
+    evidence_list: list[dict],
+) -> set[int]:
+    """수치가 충돌하는 사실 후보의 인덱스를 한 번의 쌍 비교로 찾는다."""
+
+    numbers = [
+        re.findall(
+            r"\d+(?:,\d{3})*(?:\.\d+)?",
+            evidence["sentence"],
+        )
+        for evidence in evidence_list
+    ]
+
+    normalized = [
+        normalize_numbers(
+            normalize_text(evidence["sentence"])
+        )
+        for evidence in evidence_list
+    ]
+
+    conflicting = set()
+
+    for index_a in range(len(evidence_list)):
+        for index_b in range(
+            index_a + 1,
+            len(evidence_list),
+        ):
+            numbers_a = numbers[index_a]
+            numbers_b = numbers[index_b]
+
+            if not numbers_a and not numbers_b:
+                continue
+
+            if numbers_a == numbers_b:
+                continue
+
+            if _normalized_similarity_at_least(
+                normalized[index_a],
+                normalized[index_b],
+            ):
+                conflicting.add(index_a)
+                conflicting.add(index_b)
+
+    return conflicting
 
 
 def select_common_facts(
@@ -155,13 +246,14 @@ def select_common_facts(
 ) -> list[dict]:
     """교차 검증된 근거 중 수치 충돌이 없는 문장을 선택한다."""
 
+    conflicting_indices = _find_conflicting_indices(
+        evidence_list
+    )
+
     conflict_free = [
         evidence
-        for evidence in evidence_list
-        if not has_conflict_with_others(
-            evidence,
-            evidence_list,
-        )
+        for index, evidence in enumerate(evidence_list)
+        if index not in conflicting_indices
     ]
 
     merged_evidence = merge_similar_evidence(conflict_free)
