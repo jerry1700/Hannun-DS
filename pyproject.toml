@@ -32,6 +32,7 @@ hannun-cluster = "hannun.clustering.cli:main"
 hannun-quality = "hannun.quality.cli:main"
 hannun-assign = "hannun.quality.assign_cli:main"
 hannun-succeed = "hannun.clustering.succession_cli:main"
+hannun-feed = "hannun.feed.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
