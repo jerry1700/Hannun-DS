@@ -356,8 +356,8 @@ def test_select_stance_evidence_sentences_matches_direction():
     target = "한미연합훈련 축소는 바람직하다"
 
     content = (
-        "한미연합훈련 축소는 평화적 대화에 도움이 된다. "
-        "그러나 일각에서는 안보 공백을 우려한다."
+        "한미연합훈련 축소에 찬성한다. "
+        "한미연합훈련 축소에 반대한다."
     )
 
     result = select_stance_evidence_sentences(
@@ -366,7 +366,17 @@ def test_select_stance_evidence_sentences_matches_direction():
         "positive",
     )
 
-    assert isinstance(result, list)
+    assert result
+
+    assert any(
+        "찬성" in sentence
+        for sentence in result
+    )
+
+    assert not any(
+        "반대" in sentence
+        for sentence in result
+    )
 
 
 def test_extract_stance_phrases_returns_bigrams():
