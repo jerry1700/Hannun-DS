@@ -29,6 +29,7 @@ hannun-preprocess = "hannun.preprocess.cli:main"
 hannun-dedup = "hannun.dedup.cli:main"
 hannun-embed = "hannun.embedding.cli:main"
 hannun-cluster = "hannun.clustering.cli:main"
+hannun-quality = "hannun.quality.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
