@@ -14,6 +14,9 @@ class QualityConfig:
     # 노이즈 구제 — 후보 146건 전수 검수 실측: 0.85 이상 정탐률 97.4%,
     # 0.80~0.85 구간은 82.9%로 급락. 벡터가 정규화돼 있어 내적이 곧 코사인
     rescue_min_sim: float = 0.85
+    # 증분 배정(티켓 102) — 시뮬레이션 실측: 0.85에서 재군집과 일치 0.789,
+    # 0.80 이하는 0.35로 오배정이 압도. 구제와 같은 값이라 규칙이 하나로 통일된다
+    assign_min_sim: float = 0.85
 
 
 def structured_issue_ids(meta, config: QualityConfig):
@@ -42,21 +45,22 @@ def issue_centroids(vectors_by_issue):
     return np.stack(rows), ids
 
 
-def rescue_assignments(noise_vectors, centroid_matrix, centroid_ids, config: QualityConfig):
-    """노이즈 벡터를 가장 가까운 이슈 중심에 붙인다. 문턱 미달은 제외.
+def nearest_issue_assignments(vectors, centroid_matrix, centroid_ids, min_sim: float):
+    """벡터를 가장 가까운 이슈 중심에 붙인다. 문턱 미달은 제외.
 
-    noise_vectors: {article_id: vector} → {article_id: (issue_local, sim)}
+    구제(93)와 증분 배정(102)이 같은 기계를 쓴다.
+    vectors: {article_id: vector} → {article_id: (issue_local, sim)}
     """
-    if not len(centroid_ids) or not noise_vectors:
+    if not len(centroid_ids) or not vectors:
         return {}
     result = {}
-    for article_id, vector in noise_vectors.items():
+    for article_id, vector in vectors.items():
         v = np.asarray(vector, dtype="float32")
         norm = np.linalg.norm(v)
         if norm == 0:
             continue
         sims = centroid_matrix @ (v / norm)
         best = int(np.argmax(sims))
-        if sims[best] >= config.rescue_min_sim:
+        if sims[best] >= min_sim:
             result[article_id] = (centroid_ids[best], float(sims[best]))
     return result

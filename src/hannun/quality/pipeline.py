@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from hannun.clustering.store import IssueStore
 from hannun.embedding.store import EmbeddingStore
 
-from .rules import QualityConfig, issue_centroids, rescue_assignments, structured_issue_ids
+from .rules import QualityConfig, issue_centroids, nearest_issue_assignments, structured_issue_ids
 from .store import QualityStore
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,8 @@ def qualify(issues: IssueStore, embeddings: EmbeddingStore, store: QualityStore,
             noise_vectors[row["article_id"]] = vector
     stats.noise_before = sum(1 for row in rows if row["issue_local"] < 0)
     centroid_matrix, centroid_ids = issue_centroids(vectors_by_issue)
-    rescues = rescue_assignments(noise_vectors, centroid_matrix, centroid_ids, config)
+    rescues = nearest_issue_assignments(noise_vectors, centroid_matrix, centroid_ids,
+                                        config.rescue_min_sim)
     stats.rescued = len(rescues)
     stats.noise_after = stats.noise_before - stats.rescued
 
