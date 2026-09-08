@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # 한눈 DS 일일 배치 — ds_input 최근 N일을 적재하고 48h 창으로 전체 체인을 돌린다.
 #
-# DE 계약(S15P21E105-118): 매일 04:00 KST 에 ds_input/<YYYY>/<YYYY-MM-DD>/articles*.jsonl
-# 이 올라오고 최근 3일은 매일 다시 쓰인다(늦게 오는 기사). 모든 단계가 멱등이라
-# 같은 창을 다시 처리해도 안전하다. cron 예(UTC 서버): 30 19 * * * → 04:30 KST
+# DE 계약(S15P21E105-118): 매일 04:00 KST 에 ds_input/<YYYY>/<YYYY-MM-DD>.jsonl 이
+# 올라오고 최근 3일은 매일 다시 쓰인다(늦게 오는 기사). 하루는 항상 파일 하나.
+# 모든 단계가 멱등이라 같은 창을 다시 처리해도 안전하다.
+# cron 예(UTC 서버): 30 19 * * * → 04:30 KST
 #
 #   ./run_daily_chain.sh                                  # 오늘 기준 48h 창
 #   START=2026-09-01 END=2026-09-02 ./run_daily_chain.sh  # 특정 창 재처리(백필)
@@ -22,11 +23,14 @@ echo "[chain] $(date -u +%FT%TZ) window ${start} ~ ${end} (UTC)"
 
 for i in $(seq 0 $((INGEST_DAYS - 1))); do
     day=$(TZ=Asia/Seoul date -d "-${i} day" +%F)
-    dir="${DS_INPUT}/${day%%-*}/${day}"
-    if compgen -G "${dir}/*.jsonl" > /dev/null; then
-        "$PY" -m hannun.ingest.cli -g "$GOLD_ROOT" -i "${dir}"/*.jsonl
+    file="${DS_INPUT}/${day%%-*}/${day}.jsonl"
+    legacy_dir="${DS_INPUT}/${day%%-*}/${day}"   # 구 구조(<날짜>/articles*.jsonl) 전환기 대비
+    if [ -f "$file" ]; then
+        "$PY" -m hannun.ingest.cli -g "$GOLD_ROOT" -i "$file"
+    elif compgen -G "${legacy_dir}/*.jsonl" > /dev/null; then
+        "$PY" -m hannun.ingest.cli -g "$GOLD_ROOT" -i "${legacy_dir}"/*.jsonl
     else
-        echo "[chain] 입력 없음: ${dir} (건너뜀)"
+        echo "[chain] 입력 없음: ${file} (건너뜀)"
     fi
 done
 
