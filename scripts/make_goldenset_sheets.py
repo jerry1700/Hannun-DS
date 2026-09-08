@@ -32,6 +32,8 @@ def main():
     p.add_argument("--pair-high", type=float, default=0.90, help="중복 후보 상위 띠 문턱")
     p.add_argument("--pair-band", type=float, default=0.85, help="중복 후보 아래 띠 하한")
     p.add_argument("--pair-count", type=int, default=300, help="중복 쌍 수(상위 띠 우선)")
+    p.add_argument("--issue-pairs", type=int, default=400,
+                   help="군집 쌍 판정 시트 크기 (같은이슈:경계:무작위 = 2:1:1)")
     p.add_argument("--out-dir", default="local/goldenset_sheets")
     args = p.parse_args()
 
@@ -125,8 +127,74 @@ def main():
     })
     sheet.to_csv(out_dir / "dedup_pairs.csv", index=False, encoding="utf-8-sig")
 
+    # ③ 군집 쌍 판정 시트 — "두 기사가 같은 이슈인가 O/X". 시트 방식보다 판단이
+    # 가볍고(쌍당 10초) 분담이 쉬워 본 채점의 기본 방식. 세 층을 섞되 층 정보는
+    # 시트에 넣지 않는다(라벨러가 층을 알면 편향) — 채점기가 파이프라인 상태에서 재유도.
+    structured_issues = set(q[q.structured].issue_local) if not q.empty else set()
+
+    def eligible(article_id):
+        label = label_of.get(article_id, -1)
+        return label >= 0 and label not in structured_issues
+
+    members = {}
+    for a in ids:
+        if eligible(a):
+            members.setdefault(label_of[a], []).append(a)
+    multi = [m for m in members.values() if len(m) >= 2]
+
+    n_same, n_boundary, n_random = args.issue_pairs // 2, args.issue_pairs // 4, args.issue_pairs // 4
+    seen, issue_pairs = set(), []
+
+    def add_pair(a, b):
+        key = (a, b) if a < b else (b, a)
+        if a != b and key not in seen:
+            seen.add(key)
+            issue_pairs.append(key)
+            return True
+        return False
+
+    attempts = 0
+    while multi and len(issue_pairs) < n_same and attempts < n_same * 50:
+        attempts += 1
+        group = multi[int(rng.integers(len(multi)))]
+        a, b = rng.choice(group, size=2, replace=False)
+        add_pair(a, b)
+
+    band_idx = np.where((values >= 0.75) & (values < 0.95))[0]
+    rng.shuffle(band_idx)
+    added = 0
+    for k in band_idx:
+        if added >= n_boundary:
+            break
+        a, b = ids[upper[0][k]], ids[upper[1][k]]
+        if eligible(a) and eligible(b) and label_of[a] != label_of[b] and add_pair(a, b):
+            added += 1
+
+    added, attempts = 0, 0
+    while added < n_random and attempts < n_random * 50:
+        attempts += 1
+        a, b = (ids[int(rng.integers(len(ids)))] for _ in range(2))
+        if eligible(a) and eligible(b) and label_of[a] != label_of[b] and add_pair(a, b):
+            added += 1
+
+    order2 = rng.permutation(len(issue_pairs))
+    issue_pairs = [issue_pairs[i] for i in order2]
+    pair_sheet = pd.DataFrame({
+        "publisher_a": [gold.loc[a].publisher_id for a, _ in issue_pairs],
+        "title_a": [str(gold.loc[a].title).split("\n")[0][:70] for a, _ in issue_pairs],
+        "body_a": [body_head(clean.content_clean.get(a), 120) for a, _ in issue_pairs],
+        "publisher_b": [gold.loc[b].publisher_id for _, b in issue_pairs],
+        "title_b": [str(gold.loc[b].title).split("\n")[0][:70] for _, b in issue_pairs],
+        "body_b": [body_head(clean.content_clean.get(b), 120) for _, b in issue_pairs],
+        "판정(O=같은이슈,X=다른이슈)": "",
+        "article_id_a": [a for a, _ in issue_pairs],
+        "article_id_b": [b for _, b in issue_pairs],
+    })
+    pair_sheet.to_csv(out_dir / "issue_pairs.csv", index=False, encoding="utf-8-sig")
+
     print(f"군집 시트: 기사 {len(rows)}건 × 라벨러 {args.labelers}부")
     print(f"중복 쌍 시트: 상위 띠(≥{args.pair_high}) {len(high)}쌍 + 띠({args.pair_band}~) {len(band)}쌍")
+    print(f"군집 쌍 시트: {len(issue_pairs)}쌍 (같은이슈 {n_same}·경계 {n_boundary}·무작위 {n_random}, 순서 섞음)")
     print(f"→ {out_dir}")
 
 
