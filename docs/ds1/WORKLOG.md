@@ -21,9 +21,17 @@
   잡아 수정. recall 후보 상위는 min_fold_len 로 의도적으로 안 접은 기사들 — 라벨링
   주간의 판정 대상. 상세는 [tickets/S15P21E105-104.md](tickets/S15P21E105-104.md).
 
+- **티켓 101 (패키징·런북) 구현** — DE 계약(118: `ds_input/<YYYY>/<YYYY-MM-DD>/`,
+  04:00 KST 갱신, 최근 3일 재작성) 확인 후 **일일 배치**로 설계: `run_daily_chain.sh`
+  (최근 3일 재적재 → 48h 창 체인 8단계, START/END 백필 지원) + [EC2_RUNBOOK.md](EC2_RUNBOOK.md)
+  (셋업·스모크·cron·flock). 15분 배정 루프는 ds_input 이 일 단위라 보류(DE 협의 항목).
+  검증 중 CLI help 의 em dash 가 cp949 콘솔에서 깨지는 것 발견·수정, `.gitattributes`
+  로 sh=LF 강제(EC2 CRLF 사고 방지). 상세는 [tickets/S15P21E105-101.md](tickets/S15P21E105-101.md).
+
 ### 다음
-- [ ] 티켓 104 커밋·MR → 라벨링 주간 일정 확정(팀)
-- [ ] DE 확인: HDFS→EC2 로컬 전달 방식·EC2 파이썬 환경 → 실수집 데이터로 전체 체인 실행
+- [ ] EC2 셋업 + 첫 스모크(런북 §1~2) → 티켓 101 마무리
+- [ ] 라벨링 주간 일정 확정(팀) → 104 본 채점
+- [ ] 무경합 임베딩 속도 재측정 → 티켓 11 각주 갱신
 
 ---
 
