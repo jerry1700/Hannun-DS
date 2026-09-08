@@ -5,8 +5,8 @@ import re
 from dataclasses import dataclass, field
 
 from .rules import (
-    BROKEN_ENTITY, BROKEN_ENTITY_MAP, COPYRIGHT_START, INLINE_RULES, LINE_RULES, MISSING_SENTENCE_SPACE,
-    TAIL_INLINE_RULES, TAIL_RULES,
+    BROKEN_ENTITY, BROKEN_ENTITY_MAP, COPYRIGHT_START, CUT_RULES, INLINE_RULES, LINE_RULES,
+    MISSING_SENTENCE_SPACE, TAIL_INLINE_RULES, TAIL_RULES,
 )
 
 STATUS_OK = "ok"
@@ -24,7 +24,7 @@ class PreprocessConfig:
     """min_clean_len 미만이면 short. 100 은 DE 크롤러가 발행 전에 버리는 기준과 같다."""
 
     min_clean_len: int = 100
-    rules_version: str = "2026-08-28"
+    rules_version: str = "2026-09-08"
 
 
 @dataclass
@@ -57,6 +57,14 @@ def clean_content(content: str, publisher_id: str | None, config: PreprocessConf
     lines, n = _cut_copyright(text.split("\n"))
     if n:
         applied.append("copyright")
+
+    # 위젯 블록은 표지 줄부터 끝까지 통째로 — 줄 규칙보다 먼저 걷어내야 안의 임의 텍스트가 안 남는다
+    for rule in _for(CUT_RULES, publisher_id):
+        for i, line in enumerate(lines):
+            if rule.pattern.search(line.strip()):
+                lines = lines[:i]
+                applied.append(rule.name)
+                break
 
     for rule in _for(LINE_RULES, publisher_id):
         kept = [line for line in lines if not rule.pattern.search(line.strip())]
