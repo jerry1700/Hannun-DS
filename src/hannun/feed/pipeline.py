@@ -17,6 +17,7 @@ from hannun.embedding.store import EmbeddingStore
 from hannun.ingest.gold import GoldStore
 from hannun.quality.store import QualityStore
 
+from .scoring import FeedConfig, hot_score
 from .store import SummaryStore
 
 log = logging.getLogger(__name__)
@@ -36,13 +37,15 @@ class SummaryStats:
 
 
 def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: RegistryStore,
-              gold: GoldStore, store: SummaryStore,
+              gold: GoldStore, store: SummaryStore, config: FeedConfig | None = None,
               start_date: str | None = None, end_date: str | None = None):
     """날짜 범위(현재 창)의 issue_quality 를 이슈 단위로 요약한다.
 
     운영 순서상 quality(93)·succeed(97) 다음에 돈다. 레지스트리가 아직 없으면
     issue_id 는 -1 로 두고 경고만 남긴다 — 요약 자체는 유효하다.
+    화제성의 기준 시각은 창 안에서 가장 늦은 발행 시각 — 배치의 "지금"이다.
     """
+    config = config or FeedConfig()
     stats = SummaryStats()
 
     q = quality.read_table(start_date, end_date)
@@ -72,6 +75,9 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
     for row in rows:
         members[row["issue_local"]].append(row)
 
+    known = [t for t in published_of.values() if t is not None]
+    reference = max(known) if known else datetime.now(timezone.utc)
+
     summarized_at = datetime.now(timezone.utc)
     out = []
     for label, rows_of in members.items():
@@ -98,6 +104,8 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
         structured = bool(rows_of[0]["structured"])
         if structured:
             stats.structured_issues += 1
+        last = max(known_times.values()) if known_times else None
+        hours_since = ((reference - last).total_seconds() / 3600) if last is not None else 0.0
         out.append({
             "window_start": stats.window_start,
             "window_end": stats.window_end,
@@ -108,7 +116,9 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
             "structured": structured,
             "representative": representative,
             "first_published_at": min(known_times.values()) if known_times else None,
-            "last_published_at": max(known_times.values()) if known_times else None,
+            "last_published_at": last,
+            "hot_score": round(hot_score(len(ids), len({r["publisher_id"] for r in rows_of}),
+                                         hours_since, config), 4),
             "summarized_at": summarized_at,
         })
     stats.issues = len(out)

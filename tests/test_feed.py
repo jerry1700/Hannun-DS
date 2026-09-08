@@ -4,7 +4,7 @@ import pyarrow as pa
 
 from hannun.clustering import RegistryStore
 from hannun.embedding import EmbeddingStore
-from hannun.feed import SummaryStore, summarize
+from hannun.feed import FeedConfig, SummaryStore, hot_score, summarize
 from hannun.ingest import GoldStore
 from hannun.ingest.gold import write_parquet_atomic
 from hannun.quality import QualityStore
@@ -91,3 +91,28 @@ def test_missing_registry_yields_minus_one(tmp_path):
 
     assert stats.with_issue_id == 0
     assert set(df.issue_id) == {-1}
+
+
+def test_hot_score_prefers_publisher_diversity():
+    config = FeedConfig()
+    # 같은 규모·신선도면 언론사가 많은 쪽이 화제성이 높다
+    assert hot_score(10, 15, 0.0, config) > hot_score(10, 3, 0.0, config)
+    # 다양성 가중 때문에 규모 열세도 다양성이 크게 앞서면 뒤집힌다
+    assert hot_score(10, 15, 0.0, config) > hot_score(30, 2, 0.0, config)
+
+
+def test_hot_score_decays_with_staleness():
+    config = FeedConfig(recency_tau_hours=24.0)
+    fresh = hot_score(10, 10, 0.0, config)
+    day_old = hot_score(10, 10, 24.0, config)
+
+    assert day_old < fresh
+    assert abs(day_old / fresh - 0.3679) < 1e-3  # τ시간 경과 = 1/e
+    assert hot_score(10, 10, -5.0, config) == fresh  # 미래 시각은 0으로 클램프
+
+
+def test_pipeline_writes_hot_score(tmp_path):
+    _, df = run(build_stores(tmp_path))
+
+    # 이슈 1(3건/3곳, 최신)이 이슈 0(2건/1곳, 오래됨)보다 화제성 높다
+    assert df.loc[1].hot_score > df.loc[0].hot_score > 0

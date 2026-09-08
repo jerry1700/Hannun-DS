@@ -21,6 +21,8 @@ SUMMARY_SCHEMA = pa.schema(
         ("representative", pa.string()),
         ("first_published_at", pa.timestamp("us", tz="UTC")),
         ("last_published_at", pa.timestamp("us", tz="UTC")),
+        # 화제성 — (규모 + 언론사 다양성 가중) × 신선도 감쇠. 피드는 이 내림차순
+        ("hot_score", pa.float32()),
         ("summarized_at", pa.timestamp("us", tz="UTC")),
     ]
 )
