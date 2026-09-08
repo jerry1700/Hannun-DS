@@ -131,3 +131,131 @@ def test_generate_fact_summary_non_positive_limit():
     }
 
     assert generate_fact_summary(issue, limit=0) == []
+
+
+def test_boilerplate_outlet_name_is_filtered():
+    from hannun.enrichment.fact_summary import (
+        _is_boilerplate_sentence,
+    )
+
+    assert _is_boilerplate_sentence(
+        "연합뉴스",
+    ) is True
+
+
+def test_boilerplate_copyright_is_filtered():
+    from hannun.enrichment.fact_summary import (
+        _is_boilerplate_sentence,
+    )
+
+    assert _is_boilerplate_sentence(
+        "저작권자 연합뉴스 무단 전재 및 재배포 금지",
+    ) is True
+
+
+def test_issue_relevance_uses_repeated_title_keywords():
+    from hannun.enrichment.fact_summary import (
+        _extract_issue_keywords,
+        _is_issue_relevant,
+    )
+
+    articles = [
+        {
+            "title": "한미훈련 축소 결정에 트럼프 입장",
+        },
+        {
+            "title": "한미훈련 축소 두고 엇갈린 반응",
+        },
+    ]
+
+    keywords = _extract_issue_keywords(articles)
+
+    assert _is_issue_relevant(
+        "한미훈련은 일부 축소됐다.",
+        keywords,
+    ) is True
+
+    assert _is_issue_relevant(
+        "호르무즈 해협 통항 대책도 논의됐다.",
+        keywords,
+    ) is False
+
+
+def test_generate_fact_summary_filters_unrelated_common_sentence():
+    issue = {
+        "articles": [
+            {
+                "article_id": "a1",
+                "publisher_name": "언론사A",
+                "title": "한미훈련 축소 결정에 트럼프 입장",
+                "content": (
+                    "한미훈련은 일부 축소됐다. "
+                    "호르무즈 해협 통항 대책도 논의됐다."
+                ),
+            },
+            {
+                "article_id": "a2",
+                "publisher_name": "언론사B",
+                "title": "한미훈련 축소 두고 엇갈린 반응",
+                "content": (
+                    "한미훈련은 일부 축소됐다. "
+                    "호르무즈 해협 통항 대책도 논의됐다."
+                ),
+            },
+        ],
+    }
+
+    result = generate_fact_summary(issue)
+
+    assert "한미훈련은 일부 축소됐다." in result
+    assert (
+        "호르무즈 해협 통항 대책도 논의됐다."
+        not in result
+    )
+
+
+def test_unbalanced_quote_is_filtered():
+    from hannun.enrichment.fact_summary import (
+        _has_unbalanced_quotes,
+    )
+
+    assert _has_unbalanced_quotes(
+        "송 의원은 “대법관은 대통령이 임명한다."
+    ) is True
+
+    assert _has_unbalanced_quotes(
+        "그는 “정책을 시행한다”고 밝혔다."
+    ) is False
+
+
+def test_photo_caption_is_boilerplate():
+    from hannun.enrichment.fact_summary import (
+        _is_boilerplate_sentence,
+    )
+
+    assert _is_boilerplate_sentence(
+        "김윤덕(왼쪽) 국토교통부 장관이 국회에서 의원 질의에 답변하고 있다."
+    ) is True
+
+
+def test_issue_relevance_requires_multiple_keywords():
+    from hannun.enrichment.fact_summary import (
+        _is_issue_relevant,
+    )
+
+    keywords = {
+        "조희대",
+        "대법원장",
+        "대법관",
+        "제청",
+    }
+
+    assert _is_issue_relevant(
+        "조희대 대법원장은 대법관 후보를 임명 제청했다.",
+        keywords,
+    ) is True
+
+    assert _is_issue_relevant(
+        "대법관 후보 재추천 방안을 논의했다.",
+        keywords,
+    ) is False

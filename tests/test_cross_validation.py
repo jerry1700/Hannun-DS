@@ -222,3 +222,207 @@ def test_ds2_sentence_to_common_fact_integration():
         "지원 예산은" not in sentence
         for sentence in sentences
     )
+
+
+
+def test_select_common_facts_merges_different_wording():
+    evidence_list = [
+        {
+            "sentence": (
+                "청와대는 “금싸라기 땅이 잘 이용되는 것이 중요하다”며 "
+                "용산공원 청년주택 건설 구상을 공식화했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a1",
+                    "publisher_name": "동아일보",
+                }
+            ],
+        },
+        {
+            "sentence": (
+                "하준경 청와대 경제성장수석이 서울 용산공원을 "
+                "주택 공급 부지로 활용하는 방안을 두고 "
+                "“이 금싸라기 땅이 잘 이용되는 게 중요하다”며 "
+                "일부는 청년주택으로 공급할 방침이라고 밝혔다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a2",
+                    "publisher_name": "경향신문",
+                }
+            ],
+        },
+    ]
+
+    result = select_common_facts(evidence_list)
+
+    assert len(result) == 1
+    assert {
+        source["publisher_name"]
+        for source in result[0]["sources"]
+    } == {
+        "동아일보",
+        "경향신문",
+    }
+
+
+def test_select_common_facts_does_not_merge_topic_only():
+    evidence_list = [
+        {
+            "sentence": (
+                "청와대는 용산공원 청년주택 공급 구상을 공식화했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a1",
+                    "publisher_name": "동아일보",
+                }
+            ],
+        },
+        {
+            "sentence": (
+                "오세훈 시장은 용산공원 주택 공급 정책에 반대했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a2",
+                    "publisher_name": "경향신문",
+                }
+            ],
+        },
+    ]
+
+    assert select_common_facts(evidence_list) == []
+
+
+def test_numeric_conflict_with_different_wording():
+    sentence_a = (
+        "정부는 용산공원에 청년주택 "
+        "1000가구를 공급한다고 밝혔다."
+    )
+    sentence_b = (
+        "청와대는 용산공원 청년주택 "
+        "2000가구 공급 방침을 밝혔다."
+    )
+
+    assert has_numeric_conflict(
+        sentence_a,
+        sentence_b,
+    ) is True
+
+
+def test_number_missing_on_one_side_is_not_conflict():
+    sentence_a = (
+        "조 대법원장은 지난 18일 손봉기 부장판사와 "
+        "김성수 부장판사를 임명 제청했다."
+    )
+    sentence_b = (
+        "조 대법원장은 전날 손봉기 부장판사와 "
+        "김성수 부장판사를 임명 제청했다."
+    )
+
+    assert has_numeric_conflict(
+        sentence_a,
+        sentence_b,
+    ) is False
+
+
+def test_common_fact_merges_when_one_sentence_omits_date_number():
+    evidence_list = [
+        {
+            "sentence": (
+                "조 대법원장은 지난 18일 손봉기 부장판사와 "
+                "김성수 부장판사를 대통령에게 임명 제청했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a1",
+                    "publisher_name": "오마이뉴스",
+                }
+            ],
+        },
+        {
+            "sentence": (
+                "조 대법원장은 전날 손봉기 부장판사와 "
+                "김성수 부장판사를 대통령에게 임명 제청했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a2",
+                    "publisher_name": "경향신문",
+                }
+            ],
+        },
+    ]
+
+    result = select_common_facts(evidence_list)
+
+    assert len(result) == 1
+    assert {
+        source["publisher_name"]
+        for source in result[0]["sources"]
+    } == {
+        "오마이뉴스",
+        "경향신문",
+    }
+
+
+def test_biographical_numbers_do_not_create_numeric_conflict():
+    sentence_a = (
+        "조 대법원장은 새 대법관 후보자로 김성수 "
+        "서울고법 부장판사(58·24기)를 전날(18일) "
+        "이재명 대통령에게 임명 제청했다."
+    )
+    sentence_b = (
+        "조 대법원장은 지난 18일 김성수 "
+        "서울고등법원 부장판사를 이재명 대통령에게 "
+        "임명 제청했다."
+    )
+
+    assert has_numeric_conflict(
+        sentence_a,
+        sentence_b,
+    ) is False
+
+
+def test_common_fact_merges_despite_age_and_class_metadata():
+    evidence_list = [
+        {
+            "sentence": (
+                "조 대법원장은 새 대법관 후보자로 손 부장판사와 "
+                "김성수 서울고법 부장판사(58·24기)를 "
+                "전날(18일) 이재명 대통령에게 임명 제청했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a1",
+                    "publisher_name": "동아일보",
+                }
+            ],
+        },
+        {
+            "sentence": (
+                "조 대법원장은 지난 18일 손봉기 대구지방법원 "
+                "부장판사와 김성수 서울고등법원 부장판사를 "
+                "이재명 대통령에게 임명 제청했다."
+            ),
+            "sources": [
+                {
+                    "article_id": "a2",
+                    "publisher_name": "오마이뉴스",
+                }
+            ],
+        },
+    ]
+
+    result = select_common_facts(evidence_list)
+
+    assert len(result) == 1
+    assert {
+        source["publisher_name"]
+        for source in result[0]["sources"]
+    } == {
+        "동아일보",
+        "오마이뉴스",
+    }
