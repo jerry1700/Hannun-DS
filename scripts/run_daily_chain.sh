@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# 한눈 DS 일일 배치 — ds_input 최근 N일을 적재하고 48h 창으로 전체 체인을 돌린다.
+#
+# DE 계약(S15P21E105-118): 매일 04:00 KST 에 ds_input/<YYYY>/<YYYY-MM-DD>/articles*.jsonl
+# 이 올라오고 최근 3일은 매일 다시 쓰인다(늦게 오는 기사). 모든 단계가 멱등이라
+# 같은 창을 다시 처리해도 안전하다. cron 예(UTC 서버): 30 19 * * * → 04:30 KST
+#
+#   ./run_daily_chain.sh                                  # 오늘 기준 48h 창
+#   START=2026-09-01 END=2026-09-02 ./run_daily_chain.sh  # 특정 창 재처리(백필)
+#   INGEST_DAYS=0 ./run_daily_chain.sh                    # 적재 생략(체인만)
+set -euo pipefail
+
+GOLD_ROOT="${GOLD_ROOT:-$HOME/gold}"
+DS_INPUT="${DS_INPUT:-$HOME/ds_input}"
+PY="${HANNUN_PY:-$HOME/S15P21E105/data/ds/.venv/bin/python}"
+INGEST_DAYS="${INGEST_DAYS:-3}"   # ds_input 재작성 주기(최근 3일)와 맞춘다
+WINDOW_DAYS="${WINDOW_DAYS:-2}"   # 48h 창
+
+start="${START:-$(date -u -d "$((WINDOW_DAYS - 1)) days ago" +%F)}"
+end="${END:-$(date -u +%F)}"
+echo "[chain] $(date -u +%FT%TZ) window ${start} ~ ${end} (UTC)"
+
+for i in $(seq 0 $((INGEST_DAYS - 1))); do
+    day=$(TZ=Asia/Seoul date -d "-${i} day" +%F)
+    dir="${DS_INPUT}/${day%%-*}/${day}"
+    if compgen -G "${dir}/*.jsonl" > /dev/null; then
+        "$PY" -m hannun.ingest.cli -g "$GOLD_ROOT" -i "${dir}"/*.jsonl
+    else
+        echo "[chain] 입력 없음: ${dir} (건너뜀)"
+    fi
+done
+
+"$PY" -m hannun.preprocess.cli            -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.dedup.cli                 -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.embedding.cli             -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.clustering.cli            -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.clustering.succession_cli -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.quality.cli               -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+"$PY" -m hannun.feed.cli                  -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+echo "[chain] done $(date -u +%FT%TZ)"
