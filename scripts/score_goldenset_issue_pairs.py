@@ -28,6 +28,40 @@ def load_pairs(path):
     return pairs
 
 
+def score_pairs(pairs, label_of, vector_of, boundary_sim=0.75):
+    """쌍 라벨을 파이프라인 상태와 대조해 층별 지표를 계산한다. 스윕에서도 재사용."""
+    known = [(a, b, o) for a, b, o in pairs
+             if a in label_of and b in label_of and a in vector_of and b in vector_of]
+
+    strata = {"machine_same": [], "boundary": [], "random": []}
+    for a, b, human_same in known:
+        machine_same = label_of[a] == label_of[b] and label_of[a] >= 0
+        sim = float(vector_of[a] @ vector_of[b])
+        if machine_same:
+            strata["machine_same"].append(human_same)
+        elif sim >= boundary_sim:
+            strata["boundary"].append(human_same)
+        else:
+            strata["random"].append(human_same)
+
+    def rate(items):
+        return round(sum(items) / len(items), 4) if items else None
+
+    human_o = [(a, b) for a, b, o in known if o]
+    caught = sum(1 for a, b in human_o if label_of[a] == label_of[b] and label_of[a] >= 0)
+    return {
+        "labeled_pairs": len(pairs),
+        "scored_pairs": len(known),
+        "같은이슈_예측쌍": {"n": len(strata["machine_same"]),
+                       "묶음_정밀도(사람도_O)": rate(strata["machine_same"])},
+        "경계쌍(다른이슈_고유사도)": {"n": len(strata["boundary"]),
+                             "과분리율(사람은_O)": rate(strata["boundary"])},
+        "무작위쌍": {"n": len(strata["random"]), "사람_O_비율": rate(strata["random"])},
+        "표본내_동거_재현율": round(caught / len(human_o), 4) if human_o else None,
+        "주의": "층화 표본이라 재현율은 표본 안 기준 — 절대값이 아니라 설정 비교용",
+    }
+
+
 def main():
     p = argparse.ArgumentParser(description="골드셋 군집 쌍 채점 (티켓 104)")
     p.add_argument("--labels", required=True, help="쌍 라벨 CSV (article_id_a/b, 판정)")
@@ -47,37 +81,7 @@ def main():
     emb = EmbeddingStore(args.gold_root).read(args.start_date, args.end_date)
     vector_of = {a: np.array(v, dtype="float32") for a, v in zip(emb.article_id, emb.vector)}
 
-    pairs = load_pairs(args.labels)
-    known = [(a, b, o) for a, b, o in pairs
-             if a in label_of and b in label_of and a in vector_of and b in vector_of]
-
-    strata = {"machine_same": [], "boundary": [], "random": []}
-    for a, b, human_same in known:
-        machine_same = label_of[a] == label_of[b] and label_of[a] >= 0
-        sim = float(vector_of[a] @ vector_of[b])
-        if machine_same:
-            strata["machine_same"].append(human_same)
-        elif sim >= args.boundary_sim:
-            strata["boundary"].append(human_same)
-        else:
-            strata["random"].append(human_same)
-
-    def rate(items):
-        return round(sum(items) / len(items), 4) if items else None
-
-    human_o = [(a, b) for a, b, o in known if o]
-    caught = sum(1 for a, b in human_o if label_of[a] == label_of[b] and label_of[a] >= 0)
-    result = {
-        "labeled_pairs": len(pairs),
-        "scored_pairs": len(known),
-        "같은이슈_예측쌍": {"n": len(strata["machine_same"]),
-                       "묶음_정밀도(사람도_O)": rate(strata["machine_same"])},
-        "경계쌍(다른이슈_고유사도)": {"n": len(strata["boundary"]),
-                             "과분리율(사람은_O)": rate(strata["boundary"])},
-        "무작위쌍": {"n": len(strata["random"]), "사람_O_비율": rate(strata["random"])},
-        "표본내_동거_재현율": round(caught / len(human_o), 4) if human_o else None,
-        "주의": "층화 표본이라 재현율은 표본 안 기준 — 절대값이 아니라 설정 비교용",
-    }
+    result = score_pairs(load_pairs(args.labels), label_of, vector_of, args.boundary_sim)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
