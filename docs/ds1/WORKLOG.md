@@ -30,13 +30,16 @@
 
 - **무경합 임베딩 속도 재측정 → 티켓 11 완전 종료** — threads=4·1,000건 실측
   10.4건/s. 경합 측정치와 같은 자릿수라 모델 비교 결론(7\~10배) 불변, e5 **확정**.
-- **DS1→DS2 계약 초안** — [contracts/ds1-to-ds2-issue-tables.md](../../../docs/contracts/ds1-to-ds2-issue-tables.md):
-  테이블 3개 위치·스키마·읽기 예시·주의(issue_local 은 창 임시, 지속 키는 issue_id)
-  + 역방향(관점·키워드 조인 키) 제안. DS2 합의 후 확정.
+- **DS1→DS2 계약 초안 → 당일 합의 완료** — [contracts/ds1-to-ds2-issue-tables.md](../../../docs/contracts/ds1-to-ds2-issue-tables.md):
+  테이블 3개 위치·스키마·읽기 예시·주의(issue_local 은 창 임시, 지속 키는 issue_id).
+  DS2 합의 3건(문서 §6): ① 테이블→JSON 변환은 DS2 몫, `issue_cluster_id = str(issue_id)`
+  ② `keywords` 는 티켓 31 전까지 optional(빈 배열) ③ 역방향 키 확정(기사 article_id,
+  이슈 issue_id).
 
 ### 다음
 - [ ] 내일 cron 로그에서 inherited>0 확인 (승계 실전 첫 검증) + nn=50 첫 운영 반영 확인
-- [ ] DS2 와 계약 §5(역방향 키) 합의 → 31 범위 정리 → 30(세부 견해 재군집) 착수
+- [ ] 31 착수(DS2 keyword_extractor 이슈 단위 일반화 재사용) — 30(세부 견해 재군집)은
+  DS2 세부 견해 산출이 아직 없어 대기
 - [ ] 다음 골드셋 창에서 nn=50 재검증
 
 ---
