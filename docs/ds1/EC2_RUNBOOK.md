@@ -96,13 +96,24 @@ docker run --rm -u "$(id -u):$(id -g)" \
 코드 갱신 반영은 `git pull` 후 `docker build -t hannun-ds .` 재빌드(레이어 캐시로
 의존성은 건너뛰고 코드만 다시 담는다 — 수십 초).
 
-## 7. Airflow 전환 — ds_export 완료 직후 이어 돌리기
+## 7. Airflow 전환 — DE 트리거로 이어 돌리기
 
-cron 04:30 고정 대신 DE 의 `ds_export` DAG(04:00 KST, ds_input 내려주기) 뒤에
-`hannun_daily_chain` 태스크로 붙는다. Airflow 컨테이너가 호스트로 ssh 해 §6 의
-`docker run` 을 실행하는 구조 — docker.sock 마운트(관리자 권한)를 피하고
-backup_to_b 의 키 패턴을 재사용한다. DAG·compose 변경은 저장소에 있고(§ds_export_dag,
-infra/docker-compose.yml), 서버에서는 키만 만들면 된다:
+체인은 **DS 소유의 별도 DAG** `ds_chain`(**`ds/dags/ds_chain_dag.py`** — compose 가
+`ds/dags` 를 `/opt/airflow/dags/ds` 로 마운트, 스케줄 없음)에 있고, DE 의
+`ds_export`(04:00 KST)가 내려주기를 마치면 TriggerDagRunOperator 로 켜서 완료를
+기다린 뒤 gold 이슈 피드(69)를 잇는다:
+
+```
+ds_export:  silver_to_ds_input → [trigger] ds_chain → gold_issue_feed
+ds_chain:   hannun_daily_chain (ssh → docker run hannun-ds)   ← DS1 소유, ds/dags/
+```
+
+파일 경계: 사슬 내용이 바뀌어도 서로의 DAG 파일을 열지 않는다(dag_id `ds_chain`
+이 계약, DS DAG 는 ds/ 폴더에서 관리). 실행은 호스트 ssh — docker.sock 마운트
+(관리자 권한)를 피하고 backup_to_b 의 키 패턴을 재사용한다. compose 변경
+(extra_hosts·키 마운트·ds/dags 마운트)만 공유 파일이고, 서버에서는 키만 만들면
+된다. compose 의 마운트가 바뀐 날은 `docker compose up -d airflow` 로 컨테이너
+재생성까지 해야 반영된다:
 
 ```bash
 # 1. airflow → 호스트 ssh 키 (한 번만)
