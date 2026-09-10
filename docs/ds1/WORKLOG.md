@@ -16,9 +16,24 @@
   (`local/` 차단)·런북 §6(빌드→스모크→cron 교체, 볼륨 3개·`-u` 소유권) 작성.
   EC2 도커 확인: 29.7.2, ubuntu 가 docker 그룹. 상세는
   [tickets/S15P21E105-101.md](tickets/S15P21E105-101.md) §6.
+- **도커 전환 완료** — 빌드·스모크 성공(체인 완주 — 이슈 309개는 오전 실행이라 창이
+  반쪽인 정상 현상, 내일 새벽 같은 창을 꽉 찬 데이터로 덮어씀), cron 을 docker run
+  으로 교체. 배관 테스트(매분 date 컨테이너)로 cron→docker 실행도 사전 확인.
+- **TS-013 — 서버 TZ 가 KST 로 바뀌어 있던 것을 발견** — cron 은 기동 시점 TZ(UTC)
+  캐시로 우연히 맞게 돌던 시한폭탄 상태. crontab 을 `30 4`(KST 기준)로 정정 +
+  cron 재시작. 런북 §3·§6, 스크립트 주석 정정.
+  상세는 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) TS-013.
+
+- **Airflow 전환 준비 (티켓 101)** — DE `ds_export` DAG 뒤에 `hannun_daily_chain`
+  태스크 추가(내려주기 완료 직후 실행 — 04:30 고정보다 안전). Airflow 컨테이너가
+  호스트로 **ssh** 해 hannun-ds 를 돌리는 구조: docker.sock 마운트(관리자 권한,
+  DE compose 주석의 경계 사항)를 피하고 backup_to_b 의 키 패턴(uid 50000) 재사용.
+  compose 에 extra_hosts·키 마운트 추가. 서버 키 생성·전환 절차는 런북 §7.
+  **DE 파일 2개 수정이라 MR 은 DE 리뷰 필수.**
 
 ### 다음
-- [ ] 도커 머지 → EC2 pull → 빌드·스모크 → cron 교체
+- [ ] 내일(9/11) 새벽 첫 도커 정기 실행 확인 — 이슈 ~700대 복귀 + inherited>0 유지
+- [ ] Airflow 전환: MR DE 리뷰 → 머지 → 서버 키 생성(런북 §7) → 병행 하루 → cron 제거
 - [ ] 다음 골드셋 창에서 nn=50 재검증
 - [ ] 31 착수(키워드) / BE 산출물 공유 협의
 
