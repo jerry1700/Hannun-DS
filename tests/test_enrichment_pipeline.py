@@ -210,3 +210,112 @@ def test_viewpoint_analysis_uses_only_stance_evidence(monkeypatch):
         "민주당"
         not in captured["articles"][0]["content"]
     )
+
+
+def test_viewpoint_group_label_is_connected_to_article(monkeypatch):
+    issue = {
+        "issue_cluster_id": "issue-test",
+        "representative_title": "대법원장 제청 논란",
+        "keywords": [],
+        "articles": [
+            {
+                "article_id": "article-1",
+                "title": "제청 절차 비판",
+                "content": (
+                    "대법원장 제청 절차가 충분한 논의 없이 "
+                    "진행됐다는 비판이 나왔다."
+                ),
+                "publisher_name": "테스트일보",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "generate_event_name",
+        lambda issue_data: "대법원장 제청",
+    )
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "generate_fact_summary",
+        lambda issue_data: [],
+    )
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "classify_stance",
+        lambda target, content: {
+            "stance": "negative",
+            "stance_confidence": 1.0,
+        },
+    )
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "select_stance_evidence_sentences",
+        lambda target, content, stance: [
+            (
+                "대법원장 제청 절차가 충분한 논의 없이 "
+                "진행됐다는 비판이 나왔다."
+            )
+        ],
+    )
+
+    captured = {}
+
+    def fake_generate_viewpoint_group_labels(
+        articles,
+        target="",
+    ):
+        captured["articles"] = articles
+        captured["target"] = target
+
+        return {
+            "article-1": "대법원장 제청 절차의 논의 부족",
+        }
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "generate_viewpoint_group_labels",
+        fake_generate_viewpoint_group_labels,
+    )
+
+    monkeypatch.setattr(
+        enrichment_pipeline,
+        "extract_stance_analysis",
+        lambda articles: {
+            "positive": {
+                "keywords": [],
+                "phrases": [],
+            },
+            "neutral": {
+                "keywords": [],
+                "phrases": [],
+            },
+            "negative": {
+                "keywords": [],
+                "phrases": [],
+            },
+        },
+    )
+
+    result = enrich_issue(issue)
+
+    assert captured["target"] == "대법원장 제청"
+
+    assert captured["articles"] == [
+        {
+            "article_id": "article-1",
+            "content": (
+                "대법원장 제청 절차가 충분한 논의 없이 "
+                "진행됐다는 비판이 나왔다."
+            ),
+            "stance": "negative",
+        }
+    ]
+
+    assert (
+        result["articles"][0]["viewpoint_group_label"]
+        == "대법원장 제청 절차의 논의 부족"
+    )
