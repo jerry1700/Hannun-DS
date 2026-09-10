@@ -29,11 +29,15 @@
   호스트로 **ssh** 해 hannun-ds 를 돌리는 구조: docker.sock 마운트(관리자 권한,
   DE compose 주석의 경계 사항)를 피하고 backup_to_b 의 키 패턴(uid 50000) 재사용.
   compose 에 extra_hosts·키 마운트 추가. 서버 키 생성·전환 절차는 런북 §7.
-  **DE 파일 2개 수정이라 MR 은 DE 리뷰 필수.**
+- **Airflow 전환 검증 완료** — MR 머지 → 서버 키 생성·compose 반영 → 수동 트리거로
+  export→ssh→docker 체인 완주(8분). 부수 실증: export 가 직전에 돌아 **오전 수집분
+  (UTC 9/10, 981건)까지 신선하게 반영** — 시각 고정 cron 이 못 하는 것. 충돌 머지에서
+  확인: DE 69(gold_issue_feed·publish_clustering, 우리 gold 를 RO 마운트로 소비 —
+  BE 경로가 DE 경유로 열림), DS2 121(export_ds2_jsonl — 합의한 변환기 구현 완료).
 
 ### 다음
-- [ ] 내일(9/11) 새벽 첫 도커 정기 실행 확인 — 이슈 ~700대 복귀 + inherited>0 유지
-- [ ] Airflow 전환: MR DE 리뷰 → 머지 → 서버 키 생성(런북 §7) → 병행 하루 → cron 제거
+- [ ] 내일(9/11) 아침: Airflow 04:00 정기 실행 초록 + inherited>0 확인 → **cron 줄 제거**
+- [ ] 97 자기-승계 구현 — 15분/1시간 재군집의 선행 조건(같은 창 재실행 시 ID 재발급 해소)
 - [ ] 다음 골드셋 창에서 nn=50 재검증
 - [ ] 31 착수(키워드) / BE 산출물 공유 협의
 
