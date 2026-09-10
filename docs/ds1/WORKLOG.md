@@ -34,6 +34,15 @@
   (UTC 9/10, 981건)까지 신선하게 반영** — 시각 고정 cron 이 못 하는 것. 충돌 머지에서
   확인: DE 69(gold_issue_feed·publish_clustering, 우리 gold 를 RO 마운트로 소비 —
   BE 경로가 DE 경유로 열림), DS2 121(export_ds2_jsonl — 합의한 변환기 구현 완료).
+- **DAG 분리 재구성 (DE 요청 → DE 재설계에 맞춤)** — ds_export 에 태스크를 붙였던
+  것을 되돌림. DE 가 69 작업으로 구조를 재설계: ds_export 가 **TriggerDagRunOperator
+  로 DS 소유 DAG `ds_chain` 을 켜고 완료를 기다린 뒤 gold_issue_feed 를 잇는다**
+  (`export → ds_chain → gold`). DAG 파일도 DE 가 우리 MR131 구현(ssh 실행)을
+  그대로 이관해 **`ds/dags/ds_chain_dag.py`** 에 배치(compose 가 ds/dags 를
+  dags 하위로 마운트) — 우리가 따로 만들던 중복본은 폐기(같은 dag_id 두 개면
+  Airflow 로딩이 깨짐). 검토했던 ExternalTaskSensor 안도 폐기(트리거 방식이 더
+  단순·직접적). compose 의 extra_hosts·키 마운트는 DE 복구에서도 유지 확인.
+  앞으로 사슬 DAG 수정은 ds/dags/ 에서 — DE 폴더는 열 일 없음.
 
 ### 다음
 - [ ] 내일(9/11) 아침: Airflow 04:00 정기 실행 초록 + inherited>0 확인 → **cron 줄 제거**
