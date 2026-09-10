@@ -7,6 +7,9 @@ from hannun.stance.classifier import (
     select_stance_evidence_sentences,
 )
 from hannun.stance.keyword_extractor import extract_stance_analysis
+from hannun.stance.viewpoint_group import (
+    generate_viewpoint_group_labels,
+)
 
 from .event_name import generate_event_name
 from .fact_summary import generate_fact_summary
@@ -32,6 +35,7 @@ def enrich_issue(issue_data: dict[str, Any]) -> dict[str, Any]:
     # 기사별 관점 분석
     enriched_articles = []
     analysis_articles = []
+    viewpoint_articles = []
 
     for article in issue_data.get("articles", []):
         stance_result = classify_stance(
@@ -59,12 +63,39 @@ def enrich_issue(issue_data: dict[str, Any]) -> dict[str, Any]:
         )
 
         if evidence_sentences:
+            evidence_text = " ".join(evidence_sentences)
+
             analysis_articles.append(
                 {
-                    "content": " ".join(evidence_sentences),
+                    "content": evidence_text,
                     "stance": stance,
                 }
             )
+
+            viewpoint_articles.append(
+                {
+                    "article_id": article["article_id"],
+                    "content": evidence_text,
+                    "stance": stance,
+                }
+            )
+
+    viewpoint_labels = generate_viewpoint_group_labels(
+        viewpoint_articles,
+        target=event_name,
+    )
+
+    fallback_viewpoint_labels = {
+        "positive": "기타 긍정 관점",
+        "neutral": "기타 중립 관점",
+        "negative": "기타 부정 관점",
+    }
+
+    for article in enriched_articles:
+        article["viewpoint_group_label"] = (
+            viewpoint_labels.get(article["article_id"])
+            or fallback_viewpoint_labels[article["stance"]]
+        )
 
     viewpoint_analysis = extract_stance_analysis(
         analysis_articles

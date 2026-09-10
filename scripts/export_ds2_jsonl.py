@@ -193,6 +193,13 @@ def export(args) -> None:
                 in enriched["articles"]
             }
 
+            viewpoint_by_id = {
+                str(article["article_id"]):
+                    article["viewpoint_group_label"]
+                for article
+                in enriched["articles"]
+            }
+
             briefing = " ".join(
                 text(sentence)
                 for sentence
@@ -227,9 +234,10 @@ def export(args) -> None:
                 "articles": [
                     {
                         "link": text(row.url),
-                        # #120 구현 전까지 null
                         "viewpointGroupLabel":
-                            None,
+                            viewpoint_by_id[
+                                str(row.article_id)
+                            ],
                         "stance":
                             stance_by_id[
                                 str(row.article_id)
