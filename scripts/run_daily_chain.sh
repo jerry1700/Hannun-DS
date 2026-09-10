@@ -4,7 +4,7 @@
 # DE 계약(S15P21E105-118): 매일 04:00 KST 에 ds_input/<YYYY>/<YYYY-MM-DD>.jsonl 이
 # 올라오고 최근 3일은 매일 다시 쓰인다(늦게 오는 기사). 하루는 항상 파일 하나.
 # 모든 단계가 멱등이라 같은 창을 다시 처리해도 안전하다.
-# cron 예(UTC 서버): 30 19 * * * → 04:30 KST
+# cron 예(KST 서버): 30 4 * * * — 시각은 서버 TZ 기준, 등록 전 timedatectl 확인(TS-013)
 #
 #   ./run_daily_chain.sh                                  # 오늘 기준 48h 창
 #   START=2026-09-01 END=2026-09-02 ./run_daily_chain.sh  # 특정 창 재처리(백필)
