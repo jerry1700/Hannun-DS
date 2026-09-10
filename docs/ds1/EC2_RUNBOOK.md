@@ -36,10 +36,13 @@ GOLD_ROOT=~/gold DS_INPUT=~/ds_input HANNUN_PY=./.venv/bin/python \
 
 ## 3. 정기 실행 (cron)
 
-DE 가 04:00 KST 에 ds_input 을 갱신하므로 04:30 KST 에 돌린다. 서버 TZ 가 UTC 면:
+DE 가 04:00 KST 에 ds_input 을 갱신하므로 04:30 KST 에 돌린다. 서버 TZ 는
+Asia/Seoul (2026-09-10 확인). crontab 시각은 서버 TZ 기준이므로 등록 전
+`timedatectl` 로 확인하고, TZ 가 바뀐 서버라면 `sudo systemctl restart cron`
+까지 해야 새 TZ 로 발화한다(cron 은 기동 시점 TZ 를 캐시 — TS-013).
 
 ```cron
-30 19 * * * cd $HOME/S15P21E105/data/ds && GOLD_ROOT=$HOME/gold DS_INPUT=$HOME/ds_input HANNUN_PY=./.venv/bin/python ./scripts/run_daily_chain.sh >> $HOME/hannun_chain.log 2>&1
+30 4 * * * cd $HOME/S15P21E105/data/ds && GOLD_ROOT=$HOME/gold DS_INPUT=$HOME/ds_input HANNUN_PY=./.venv/bin/python ./scripts/run_daily_chain.sh >> $HOME/hannun_chain.log 2>&1
 ```
 
 - 멱등 설계라 겹쳐 돌아도 데이터는 안전하지만, **동시 기동은 피한다**(이전 실행이
@@ -87,8 +90,39 @@ docker run --rm -u "$(id -u):$(id -g)" \
 스모크 확인 후 cron 은 실행 명령만 교체:
 
 ```cron
-30 19 * * * flock -n /tmp/hannun_chain.lock docker run --rm -u 1000:1000 -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input -v $HOME/.cache/huggingface:/data/hf_cache hannun-ds >> $HOME/hannun_chain.log 2>&1
+30 4 * * * flock -n /tmp/hannun_chain.lock docker run --rm -u 1000:1000 -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input -v $HOME/.cache/huggingface:/data/hf_cache hannun-ds >> $HOME/hannun_chain.log 2>&1
 ```
 
 코드 갱신 반영은 `git pull` 후 `docker build -t hannun-ds .` 재빌드(레이어 캐시로
 의존성은 건너뛰고 코드만 다시 담는다 — 수십 초).
+
+## 7. Airflow 전환 — ds_export 완료 직후 이어 돌리기
+
+cron 04:30 고정 대신 DE 의 `ds_export` DAG(04:00 KST, ds_input 내려주기) 뒤에
+`hannun_daily_chain` 태스크로 붙는다. Airflow 컨테이너가 호스트로 ssh 해 §6 의
+`docker run` 을 실행하는 구조 — docker.sock 마운트(관리자 권한)를 피하고
+backup_to_b 의 키 패턴을 재사용한다. DAG·compose 변경은 저장소에 있고(§ds_export_dag,
+infra/docker-compose.yml), 서버에서는 키만 만들면 된다:
+
+```bash
+# 1. airflow → 호스트 ssh 키 (한 번만)
+ssh-keygen -t ed25519 -f ~/.ssh/hannun-airflow -N "" -C "airflow-to-host-ds-chain"
+cat ~/.ssh/hannun-airflow.pub >> ~/.ssh/authorized_keys
+sudo install -m 600 -o 50000 -g 50000 ~/.ssh/hannun-airflow ~/.ssh/hannun-airflow.pem
+rm ~/.ssh/hannun-airflow                     # 컨테이너용 사본(50000 소유)만 남긴다
+
+# 2. compose 변경 반영 (airflow 컨테이너 재생성)
+cd ~/S15P21E105/data/de/infra
+docker compose up -d airflow
+
+# 3. 배관 확인 — 컨테이너에서 호스트 docker 가 보이면 통과
+docker compose exec airflow ssh -i /opt/airflow/.ssh/hannun.pem \
+  -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+  ubuntu@host.docker.internal 'docker image ls hannun-ds'
+```
+
+전환 절차: 첫날은 **cron(§6)을 그대로 두고** 병행 — Airflow 가 먼저 돌면 flock 이
+cron 턴을 건너뛰게 하고, Airflow 가 실패하면 cron 이 04:30 에 받아준다(멱등이라
+둘 다 돌아도 데이터는 안전). Airflow 태스크가 초록으로 확인된 다음날 `crontab -e`
+로 cron 줄을 지운다. 로그는 Airflow 태스크 로그와 `~/hannun_chain.log`(tee) 양쪽에
+남는다.
