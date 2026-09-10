@@ -1,0 +1,11 @@
+# 이미지에 필요 없는 것 전부 — 특히 local/ 은 기사 데이터라 절대 들어가면 안 된다
+local/
+.venv*
+tests/
+docs/
+scripts/*.py
+__pycache__/
+*.pyc
+.pytest_cache/
+Dockerfile
+.dockerignore
