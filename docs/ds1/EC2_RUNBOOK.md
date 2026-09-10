@@ -63,3 +63,32 @@ BE 소비 지점: `issue_summary/`(피드: issue_id·대표 기사·hot_score) +
   DE 가 15분 단위 내려주기를 제공하면 ingest→preprocess→embed→assign→quality 로 붙인다
 - 코드 갱신 반영: `git pull` 후 `./.venv/bin/pip install -e ".[embedding,clustering]"`
   재실행 (pyproject 의 콘솔 스크립트가 바뀌었을 수 있음 — TS-011)
+
+## 6. 도커 전환 (승계 실전 검증 후)
+
+venv 대신 이미지로 돌린다. 바뀌는 것은 "무엇을 실행하나"뿐 — 데이터(`~/gold`,
+`~/ds_input`)와 모델 캐시는 호스트 볼륨으로 남고, cron·flock·로그도 호스트 유지.
+
+```bash
+cd ~/S15P21E105/data/ds
+docker build -t hannun-ds .
+
+# 스모크 (수동 1회) — venv 실행과 같은 창을 재처리하니 멱등으로 안전
+docker run --rm -u "$(id -u):$(id -g)" \
+  -v ~/gold:/data/gold -v ~/ds_input:/data/ds_input \
+  -v ~/.cache/huggingface:/data/hf_cache \
+  hannun-ds
+```
+
+- `-u`(호스트 사용자로 실행)를 빼먹으면 산출물이 root 소유가 돼 venv 병행 사용이 꼬인다
+- 백필·옵션은 `-e` 로 전달: `-e START=2026-09-01 -e END=2026-09-02 -e INGEST_DAYS=0`
+- 모델 캐시는 venv 시절 것(`~/.cache/huggingface`)을 그대로 마운트 — 재다운로드 없음
+
+스모크 확인 후 cron 은 실행 명령만 교체:
+
+```cron
+30 19 * * * flock -n /tmp/hannun_chain.lock docker run --rm -u 1000:1000 -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input -v $HOME/.cache/huggingface:/data/hf_cache hannun-ds >> $HOME/hannun_chain.log 2>&1
+```
+
+코드 갱신 반영은 `git pull` 후 `docker build -t hannun-ds .` 재빌드(레이어 캐시로
+의존성은 건너뛰고 코드만 다시 담는다 — 수십 초).
