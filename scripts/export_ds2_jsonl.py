@@ -92,7 +92,9 @@ def export(args) -> None:
                 target.parent
             )
 
-        if target.exists():
+        # --overwrite 는 일일 체인·Airflow 재시도용 — 임시 파일을 쓴 뒤
+        # replace 하므로 교체는 원자적이다 (S15P21E105-122)
+        if target.exists() and not args.overwrite:
             raise FileExistsError(
                 target
             )
@@ -309,6 +311,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--dry-run",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--overwrite",
         action="store_true",
     )
 

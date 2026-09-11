@@ -13,6 +13,7 @@ set -euo pipefail
 
 GOLD_ROOT="${GOLD_ROOT:-$HOME/gold}"
 DS_INPUT="${DS_INPUT:-$HOME/ds_input}"
+DS_OUTPUT="${DS_OUTPUT:-$HOME/ds_output}"   # DS2 관점·발행용 JSONL (DE gold_issue_feed 가 읽음)
 PY="${HANNUN_PY:-$HOME/S15P21E105/data/ds/.venv/bin/python}"
 INGEST_DAYS="${INGEST_DAYS:-3}"   # ds_input 재작성 주기(최근 3일)와 맞춘다
 WINDOW_DAYS="${WINDOW_DAYS:-2}"   # 48h 창
@@ -41,4 +42,11 @@ done
 "$PY" -m hannun.clustering.succession_cli -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
 "$PY" -m hannun.quality.cli               -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
 "$PY" -m hannun.feed.cli                  -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
+
+# DS2 관점 분석 + BE 연동 JSONL 내보내기 (S15P21E105-122) — DE 의 gold_issue_feed 가
+# 이 파일을 이슈 피드에 병합한다. 파일명은 실행일(KST) 하나, 재실행은 원자적 덮어쓰기
+mkdir -p "$DS_OUTPUT"
+"$PY" scripts/export_ds2_jsonl.py --gold-root "$GOLD_ROOT" \
+    --start "$start" --end "$end" --window "$start" \
+    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite
 echo "[chain] done $(date -u +%FT%TZ)"

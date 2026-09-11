@@ -1,7 +1,8 @@
-"""DS 일일 사슬 DAG (S15P21E105-101).
+"""DS 일일 사슬 DAG (S15P21E105-101, -122).
 
-DS 파이프라인 여덟 단계를 hannun-ds 이미지로 한 번에 돌린다. 사슬 내용은 DS 소유이고
-DE 는 부르기만 한다 — ds_export DAG 가 내려주기를 마친 뒤 이 DAG 를 켠다.
+DS 파이프라인 여덟 단계 + DS2 관점·발행용 JSONL 내보내기(ds_output)를 hannun-ds
+이미지로 한 번에 돌린다. 사슬 내용은 DS 소유이고 DE 는 부르기만 한다 — ds_daily
+DAG 가 이 DAG 를 켜고, 끝나면 gold_issue_feed 가 gold 와 ds_output 을 병합한다.
 
 스스로 예약하지 않는다. 창을 부르는 쪽이 정하게 해서 언제 눌렀느냐로 산출물 창이
 달라지는 일을 막는다.
@@ -41,6 +42,7 @@ with DAG(
             " 'set -o pipefail; flock -n /tmp/hannun_chain.lock"
             " docker run --rm -u 1000:1000"
             " -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input"
+            " -v $HOME/ds_output:/data/ds_output"
             " -v $HOME/.cache/huggingface:/data/hf_cache hannun-ds"
             " 2>&1 | tee -a $HOME/hannun_chain.log'"
         ),

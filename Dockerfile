@@ -16,13 +16,14 @@ COPY pyproject.toml ./
 COPY src/ src/
 RUN pip install --no-cache-dir ".[embedding,clustering]"
 
-COPY scripts/run_daily_chain.sh scripts/
+COPY scripts/run_daily_chain.sh scripts/export_ds2_jsonl.py scripts/
 RUN chmod +x scripts/run_daily_chain.sh
 
 # 컨테이너 안 경로는 고정 — 호스트의 실제 위치는 docker run 의 -v 가 정한다.
 # NUMBA_CACHE_DIR: umap 의 JIT 컴파일 결과를 볼륨에 남겨 매 실행 재컴파일을 피한다
 ENV GOLD_ROOT=/data/gold \
     DS_INPUT=/data/ds_input \
+    DS_OUTPUT=/data/ds_output \
     HANNUN_PY=python \
     HF_HOME=/data/hf_cache \
     NUMBA_CACHE_DIR=/data/hf_cache/numba
