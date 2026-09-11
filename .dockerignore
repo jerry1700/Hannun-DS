@@ -4,6 +4,7 @@ local/
 tests/
 docs/
 scripts/*.py
+!scripts/export_ds2_jsonl.py
 __pycache__/
 *.pyc
 .pytest_cache/
