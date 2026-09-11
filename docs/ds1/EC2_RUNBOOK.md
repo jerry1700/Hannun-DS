@@ -100,13 +100,18 @@ docker run --rm -u "$(id -u):$(id -g)" \
 
 체인은 **DS 소유의 별도 DAG** `ds_chain`(**`ds/dags/ds_chain_dag.py`** — compose 가
 `ds/dags` 를 `/opt/airflow/dags/ds` 로 마운트, 스케줄 없음)에 있고, DE 의
-`ds_export`(04:00 KST)가 내려주기를 마치면 TriggerDagRunOperator 로 켜서 완료를
-기다린 뒤 gold 이슈 피드(69)를 잇는다:
+`ds_daily`(04:00 KST)가 TriggerDagRunOperator 로 켜서 완료를 기다린 뒤 gold 이슈
+피드(69)를 잇는다. ds_input 내려주기는 `article_ingest` DAG 가 **15분마다**
+해두므로(118, 2026-09-11 개편) 체인 시작 시점에 입력은 이미 최신이다:
 
 ```
-ds_export:  silver_to_ds_input → [trigger] ds_chain → gold_issue_feed
-ds_chain:   hannun_daily_chain (ssh → docker run hannun-ds)   ← DS1 소유, ds/dags/
+article_ingest (15분):  수집 → silver → ds_input 내려주기
+ds_daily (04:00):       [trigger] ds_chain → gold_issue_feed
+ds_chain:               hannun_daily_chain (ssh → docker run hannun-ds)   ← DS1 소유
 ```
+
+트리거 주체 이력: ds_export(내려주기+트리거 통합, ~09-10) → ds_daily 로 분리
+(09-11, ds_export 는 paused 로 잔존). dag_id `ds_chain` 계약 덕에 우리 쪽 변경 0.
 
 파일 경계: 사슬 내용이 바뀌어도 서로의 DAG 파일을 열지 않는다(dag_id `ds_chain`
 이 계약, DS DAG 는 ds/ 폴더에서 관리). 실행은 호스트 ssh — docker.sock 마운트
@@ -132,8 +137,8 @@ docker compose exec airflow ssh -i /opt/airflow/.ssh/hannun.pem \
   ubuntu@host.docker.internal 'docker image ls hannun-ds'
 ```
 
-전환 절차: 첫날은 **cron(§6)을 그대로 두고** 병행 — Airflow 가 먼저 돌면 flock 이
-cron 턴을 건너뛰게 하고, Airflow 가 실패하면 cron 이 04:30 에 받아준다(멱등이라
-둘 다 돌아도 데이터는 안전). Airflow 태스크가 초록으로 확인된 다음날 `crontab -e`
-로 cron 줄을 지운다. 로그는 Airflow 태스크 로그와 `~/hannun_chain.log`(tee) 양쪽에
-남는다.
+전환 절차(완료): 첫날은 cron(§6)을 폴백으로 병행하고, Airflow 정기 실행이 초록으로
+확인된 다음날 cron 줄을 지운다 — **2026-09-11 전환 완료, cron 제거됨.** 이후 실행
+주체는 Airflow 뿐이고, 로그는 Airflow 태스크 로그와 `~/hannun_chain.log`(tee)
+양쪽에 남는다. 수동 실행이 필요하면 UI 에서 ds_chain 을 직접 트리거하거나 §6 의
+docker run 을 쓴다.
