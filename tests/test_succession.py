@@ -90,6 +90,33 @@ def test_rerun_is_idempotent(tmp_path):
     assert first["status"] == second["status"]
 
 
+def test_same_window_rerun_with_grown_data_keeps_ids(tmp_path):
+    issues, registry = build_w1(tmp_path)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+    w1 = registry.read_window(D1).to_pydict()
+    id_of1 = dict(zip(w1["article_id"], w1["issue_id"]))
+    id_a, id_b = id_of1["a1"], id_of1["b1"]
+
+    # 15분 뒤 같은 창 재군집: 라벨은 리셋되고(0,1 → 3,4), 기사가 늘고, 새 이슈(6)도 탄생
+    write_window(issues, (D1, D2), {
+        3: [("a1", D1), ("a2", D2), ("a3", D2), ("a4", D2)],
+        4: [("b1", D2), ("b2", D2), ("b3", D2), ("b4", D2)],
+        6: [("h1", D2), ("h2", D2), ("h3", D2)],
+    })
+    stats = succeed(issues, registry, start_date=D1, end_date=D2)
+    w = registry.read_window(D1).to_pydict()
+    id_of = dict(zip(w["article_id"], w["issue_id"]))
+    status_of = dict(zip(w["article_id"], w["status"]))
+
+    assert stats.self_window and stats.inherited == 2 and stats.created == 1
+    # 살아 있는 이슈의 서비스 ID 는 라벨 리셋·데이터 증가에도 유지된다
+    assert id_of["a1"] == id_a and id_of["a4"] == id_a and id_of["b1"] == id_b
+    # status 는 직전 창 대비 계보 — 이 창에서 태어난 이슈는 재실행 뒤에도 new
+    assert status_of["a1"] == "new" and status_of["h1"] == "new"
+    # 채번은 전 창 최대 다음부터 — 죽은 ID 재사용 없음
+    assert id_of["h1"] > max(id_a, id_b)
+
+
 def test_min_shared_blocks_single_article_overlap(tmp_path):
     issues, registry = build_w1(tmp_path)
     succeed(issues, registry, start_date=D1, end_date=D2)
