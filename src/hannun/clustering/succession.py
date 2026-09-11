@@ -4,11 +4,15 @@
 어느 이슈에 있었는지 득표로 세어, 과반 겹침이면 그 이슈의 서비스 ID 를 승계한다.
 시뮬레이션 실측(티켓 97): 창당 승계 42~50%(이슈 수명 분포와 부합), 문턱 0.3↔0.5
 차이 3%p 로 둔감, 분열 ~7%·병합 ~4% 는 규칙으로 처리.
+
+자기-승계: 같은 창의 직전 실행이 있으면 그 배정이 직전 창보다 우선한다 — 창 하나를
+여러 번 재계산(15분 재군집, 데이터가 늘어난 재실행)해도 ID 가 흔들리지 않는 근거.
+운영 실측(09-09): 이게 없던 시절 같은 창 재실행이 ID 를 전부 재발급했다.
 """
 
 import collections
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 from .registry import RegistryStore
@@ -29,6 +33,7 @@ class SuccessionStats:
     window_start: str | None = None
     window_end: str | None = None
     prev_window: str | None = None
+    self_window: bool = False   # 같은 창의 직전 실행을 승계원으로 썼는가
     issues: int = 0
     inherited: int = 0
     created: int = 0
@@ -43,9 +48,11 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
             start_date: str | None = None, end_date: str | None = None):
     """현재 창(재군집 직후)의 issue_local 에 서비스 issue_id 를 배정해 레지스트리에 쓴다.
 
-    직전 창은 레지스트리에서 찾는다(현재 창 시작일보다 앞선 것 중 가장 최근).
-    같은 창을 재실행하면 같은 결과가 나온다 — 새 ID 채번이 현재 창을 제외한
-    최대 ID 에서 시작하기 때문.
+    승계원은 둘이다: 직전 창(현재 창 시작일보다 앞선 것 중 가장 최근)과, 있다면
+    **같은 창의 직전 실행**(자기-승계 — 이쪽이 우선). 그래서 같은 창을 데이터가
+    늘어난 채 재실행해도 살아 있는 이슈의 ID 는 유지되고, 순수 재실행은 같은
+    결과를 낸다. status 는 "직전 창 대비 계보"의 의미를 지키기 위해 자기-승계
+    시 이전 값을 그대로 물려받는다(이 창에서 태어난 이슈는 재실행 뒤에도 new).
     """
     config = config or SuccessionConfig()
     stats = SuccessionStats()
@@ -64,13 +71,25 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
             members[row["issue_local"]].append(row)
     stats.issues = len(members)
 
-    prev_starts = [s for s in registry.window_starts() if s < stats.window_start]
+    starts = registry.window_starts()
+    prev_starts = [s for s in starts if s < stats.window_start]
     prev_id_of = {}
     if prev_starts:
         stats.prev_window = prev_starts[-1]
         prev_table = registry.read_window(stats.prev_window)
         prev_id_of = dict(zip(prev_table.column("article_id").to_pylist(),
                               prev_table.column("issue_id").to_pylist()))
+
+    # 자기-승계 — 같은 창의 직전 실행이 있으면 그 배정이 직전 창보다 우선한다
+    # (같은 article_id 가 양쪽에 있으면 현재 창의 배정이 최신 진실)
+    self_status_of = {}
+    if stats.window_start in starts:
+        stats.self_window = True
+        self_table = registry.read_window(stats.window_start)
+        prev_id_of.update(zip(self_table.column("article_id").to_pylist(),
+                              self_table.column("issue_id").to_pylist()))
+        self_status_of = dict(zip(self_table.column("issue_id").to_pylist(),
+                                  self_table.column("status").to_pylist()))
 
     # 새 군집별 직전 이슈 득표 → 같은 직전 이슈를 여럿이 주장하면 최다 득표가 승계(분열)
     claims = collections.defaultdict(list)
@@ -90,12 +109,18 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
         assigned[entries[0][1]] = prev_issue_id
         stats.splits += len(entries) - 1
 
-    next_id = registry.max_issue_id(exclude_window=stats.window_start) + 1
+    # 채번은 전 창 통틀어 최대 ID 다음부터 — 자기-승계가 재실행 멱등을 책임지므로,
+    # 옛 "현재 창 제외" 방식(재실행에서 죽은 이슈의 ID 가 다른 군집에 재사용될
+    # 위험이 있던)은 버린다
+    next_id = registry.max_issue_id() + 1
     succeeded_at = datetime.now(timezone.utc)
     out = []
     for label in sorted(members):
         if label in assigned:
-            issue_id, status = assigned[label], "inherited"
+            issue_id = assigned[label]
+            # 자기-승계로 이어받은 이슈는 계보(status)도 그대로 — 이 창에서
+            # 태어난 이슈는 재실행 뒤에도 new 로 남아야 BE 통계가 안 흔들린다
+            status = self_status_of.get(issue_id, "inherited")
             stats.inherited += 1
         else:
             issue_id, status = next_id, "new"
@@ -118,6 +143,6 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
     log.info(
         f"succeed done: window={stats.window_start} issues={stats.issues} "
         f"inherited={stats.inherited} created={stats.created} splits={stats.splits} "
-        f"(prev={stats.prev_window})"
+        f"(prev={stats.prev_window}, self={stats.self_window})"
     )
     return stats
