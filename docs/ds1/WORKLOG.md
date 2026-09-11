@@ -38,12 +38,17 @@
   reset_dag_run 트리거와 충돌 정리). 상세는
   [tickets/S15P21E105-97.md](tickets/S15P21E105-97.md) §4.6.
 
+- **ds_chain 15분 스케줄 가동 (티켓 102 §7)** — 팀 합의(서비스 품질)로 15분 전체
+  재군집 확정. 전제 확인: ds_input 15분 도착 실증(article_ingest 4연속 success,
+  파일 mtime 이 실행 종료와 3초 차), 자기-승계 머지. retries=0(다음 실행이 자연
+  재시도)·타임아웃 30분. ds_daily 트리거와 당분간 공존(직렬화+멱등으로 무해).
+  §2 의 "1시간 권고"는 자기-승계 이전 논거라 폐기.
+
 ### 다음
-- [ ] 97 머지 → 122 와 함께 EC2 반영: `git pull` + `docker build -t hannun-ds .`
-  + `mkdir -p ~/ds_output` (한 번에)
-- [ ] 15분 스케줄 DE 협의: ds_chain 에 `*/15` 스케줄 + ds_daily 는 트리거 대신
-  센서로 (또는 gold 병합도 15분) — 안 잡히면 하루 1회 유지로 무해
-- [ ] 멤버십 통일(quality 기준) DE 제안 / briefing 타입(List) BE·DE 협의
+- [ ] 102 머지 → EC2 `git pull` + `docker build -t hannun-ds .` (97 코드 반영 필수 —
+  옛 이미지로 15분 돌면 ID 재발급!) → 첫 몇 사이클 소요 시간·inherited 추이 관찰
+- [ ] DE 협의: ds_daily 트리거 정리 + gold 병합·발행 주기(그 전까지 BE 반영은
+  하루 1회) / 멤버십 통일(quality 기준) / briefing 타입(List) BE·DE
 - [ ] 다음 골드셋 창 nn=50 재검증
 
 ---
