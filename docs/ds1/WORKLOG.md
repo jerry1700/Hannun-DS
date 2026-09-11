@@ -30,11 +30,21 @@
   대상), briefing 타입 불일치의 최소 수정 지점이 이 스크립트임을 확인.
   상세는 [tickets/S15P21E105-122.md](tickets/S15P21E105-122.md).
 
+- **97 자기-승계 구현 (재오픈)** — 승계원을 "직전 창 ∪ 같은 창의 직전 실행(우선)"
+  으로 확장, status 는 계보 의미 보존(재실행에도 new 는 new), 채번은 전 창 max+1
+  (죽은 ID 재사용 차단). 테스트 313 통과 + **실데이터 재실행 검증: 이슈 509 전부
+  승계·기사 4,601건 ID 유지 100%·신규 발급 0** (구현 전엔 전량 재발급).
+  15분 재군집의 기술 관문 해소 — 남은 것은 스케줄 방식 DE 협의(ds_daily 의
+  reset_dag_run 트리거와 충돌 정리). 상세는
+  [tickets/S15P21E105-97.md](tickets/S15P21E105-97.md) §4.6.
+
 ### 다음
-- [ ] 122 머지 → EC2 재빌드(`docker build`) + `mkdir -p ~/ds_output` → 내일 새벽
-  gold_issue_feed 에 관점 열 채워지는지 확인
+- [ ] 97 머지 → 122 와 함께 EC2 반영: `git pull` + `docker build -t hannun-ds .`
+  + `mkdir -p ~/ds_output` (한 번에)
+- [ ] 15분 스케줄 DE 협의: ds_chain 에 `*/15` 스케줄 + ds_daily 는 트리거 대신
+  센서로 (또는 gold 병합도 15분) — 안 잡히면 하루 1회 유지로 무해
 - [ ] 멤버십 통일(quality 기준) DE 제안 / briefing 타입(List) BE·DE 협의
-- [ ] ① 97 자기-승계(15분 관문, DE 대기 중) / 다음 골드셋 창 nn=50 재검증
+- [ ] 다음 골드셋 창 nn=50 재검증
 
 ---
 
