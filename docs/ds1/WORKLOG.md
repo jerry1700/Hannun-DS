@@ -23,10 +23,18 @@
   briefing 타입 String↔List 불일치, viewpoint 라벨 미구현). 다음 작업 ②(멤버십
   통일 + ds_output 연결)가 이를 겨냥.
 
+- **티켓 122 (ds_output 연결) 구현·검증 완료** — DS2 변환기를 체인 9단계째로
+  연결(창 전달·실행일 KST 파일명·`--overwrite` 원자 교체), 컨테이너에
+  `~/ds_output` 마운트, Dockerfile 반입. 로컬 1/2 창 검증: 이슈 502 내보냄·기사
+  3,965행, 재실행 가드/덮어쓰기 확인. 부수 발견: empty_briefings 34%(DS2 공유
+  대상), briefing 타입 불일치의 최소 수정 지점이 이 스크립트임을 확인.
+  상세는 [tickets/S15P21E105-122.md](tickets/S15P21E105-122.md).
+
 ### 다음
-- [ ] ② 멤버십 통일(quality 기준 제안, DE 리뷰) + ds_output 연결(체인에 export
-  단계·마운트·창 전달 — 우리 파일) → ① 97 자기-승계(15분 관문, DE 대기 중)
-- [ ] briefing 타입 불일치 DE·BE 에 전달 / 다음 골드셋 창 nn=50 재검증
+- [ ] 122 머지 → EC2 재빌드(`docker build`) + `mkdir -p ~/ds_output` → 내일 새벽
+  gold_issue_feed 에 관점 열 채워지는지 확인
+- [ ] 멤버십 통일(quality 기준) DE 제안 / briefing 타입(List) BE·DE 협의
+- [ ] ① 97 자기-승계(15분 관문, DE 대기 중) / 다음 골드셋 창 nn=50 재검증
 
 ---
 
