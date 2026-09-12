@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from functools import lru_cache
 from typing import Any
 
 from sklearn.cluster import KMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
+
+from hannun.embedding.encoder import EncoderConfig
 
 
 VALID_STANCES = {
@@ -71,7 +73,32 @@ PARTICLE_SUFFIXES = (
 
 MAX_SUBCLUSTERS = 3
 MAX_LABEL_CHARS = 60
-PAIR_SIMILARITY_THRESHOLD = 0.25
+SINGLE_GROUP_SIMILARITY_THRESHOLD = 0.75
+
+
+# 확정 라벨 가이드:
+# 근거가 달라도 최종 주장이 같으면 같은 세부견해,
+# "폐기"와 "수정"처럼 최종 요구가 다르면 별도 세부견해로 본다.
+CONCLUSION_ACTION_PATTERNS = (
+    ("폐기", r"폐기"),
+    ("수정", r"수정"),
+    ("철회", r"철회"),
+    ("중단", r"중단"),
+    ("취소", r"취소"),
+    ("사퇴", r"사퇴|퇴진|물러나"),
+    ("탄핵", r"탄핵"),
+    ("축소", r"축소|줄이|줄여"),
+    ("확대", r"확대|늘리|늘려"),
+    ("유지", r"유지"),
+    ("금지", r"금지"),
+    ("허용", r"허용"),
+    ("개정", r"개정"),
+    ("도입", r"도입"),
+    ("시행", r"시행"),
+    ("추진", r"추진"),
+    ("공급", r"공급"),
+    ("조성", r"조성"),
+)
 
 
 def _first_sentence(text: str) -> str:
@@ -90,37 +117,119 @@ def _first_sentence(text: str) -> str:
 
 
 def _strip_reporting_tail(text: str) -> str:
-    """라벨에 필요 없는 보도 표현을 제거한다."""
+    """주장 내용은 보존하고 뒤의 보도 표현만 제거한다."""
 
     cleaned = " ".join(str(text or "").split())
 
-    patterns = (
-        r"(?:라는|다는|이라고|라고)\s*"
-        r"(?:비판|우려|평가|지적|분석|주장|입장)"
-        r"(?:이|가)?"
-        r"(?:\s*(?:나왔다|제기됐다|이어졌다|있다|이다|전해졌다))?"
-        r"[.!?]*$",
-        r"\s*(?:비판|우려|평가|지적|분석|주장|입장)"
-        r"(?:이|가)?\s*(?:나왔다|제기됐다|있다|이다)?[.!?]*$",
+    replacements = (
+        (
+            r"다는\s*"
+            r"(?:비판|우려|평가|지적|분석|주장|입장)"
+            r"(?:이|가)?"
+            r"(?:\s*(?:나왔다|제기됐다|이어졌다|있다|이다|전해졌다))?"
+            r"[.!?]*$",
+            "다",
+        ),
+        (
+            r"다고\s*"
+            r"(?:말했다|밝혔다|설명했다|강조했다|주장했다|"
+            r"평가했다|지적했다|비판했다|전했다|했다)"
+            r"[.!?]*$",
+            "다",
+        ),
+        (
+            r"(?:라는|이라고|라고)\s*"
+            r"(?:비판|우려|평가|지적|분석|주장|입장)"
+            r"(?:이|가)?"
+            r"(?:\s*(?:나왔다|제기됐다|이어졌다|있다|이다|전해졌다))?"
+            r"[.!?]*$",
+            "",
+        ),
+        (
+            r"\s*(?:비판|우려|평가|지적|분석|주장|입장)"
+            r"(?:이|가)?\s*"
+            r"(?:나왔다|제기됐다|있다|이다)?"
+            r"[.!?]*$",
+            "",
+        ),
     )
 
-    for pattern in patterns:
+    for pattern, replacement in replacements:
         cleaned = re.sub(
             pattern,
-            "",
+            replacement,
             cleaned,
         )
 
     return cleaned.strip(" .!?")
 
 
+def _final_claim_sentence(text: str) -> str:
+    """evidence 중 마지막 주장 문장을 결론 후보로 사용한다."""
+
+    cleaned = " ".join(str(text or "").split())
+
+    if not cleaned:
+        return ""
+
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(
+            r"(?<=[.!?])\s+",
+            cleaned,
+        )
+        if sentence.strip()
+    ]
+
+    if not sentences:
+        return ""
+
+    return _strip_reporting_tail(
+        sentences[-1]
+    )
+
+
+def _concise_claim_label(text: str) -> str:
+    """최종 결론을 보존하면서 짧은 주장형 라벨을 만든다."""
+
+    claim = _final_claim_sentence(text)
+
+    if not claim:
+        return ""
+
+    words = claim.split()
+
+    while (
+        len(" ".join(words)) > MAX_LABEL_CHARS
+        and len(words) > 1
+    ):
+        words.pop(0)
+
+    label = " ".join(words).strip()
+
+    if len(label) > MAX_LABEL_CHARS:
+        label = (
+            label[:MAX_LABEL_CHARS]
+            .rstrip()
+            + "…"
+        )
+
+    return label
+
+
 def _normalize_for_similarity(
     text: str,
     target: str = "",
 ) -> str:
-    """서브클러스터링용 텍스트를 토큰 단위로 정규화한다."""
+    """
+    최종 주장 문장의 술어·결론은 유지하고,
+    공통 Target 표현만 줄여 임베딩 비교에 사용한다.
+    """
 
-    cleaned = _strip_reporting_tail(text)
+    claim = _final_claim_sentence(text)
+
+    if not claim:
+        return ""
 
     target_tokens = {
         _normalize_label_token(token)
@@ -130,26 +239,29 @@ def _normalize_for_similarity(
         )
     }
 
-    normalized_tokens = []
+    kept = []
 
     for raw_token in re.findall(
         r"[0-9A-Za-z가-힣]+",
-        cleaned,
+        claim,
     ):
-        token = _normalize_label_token(raw_token)
+        normalized = _normalize_label_token(
+            raw_token
+        )
 
-        if len(token) < 2:
+        if (
+            normalized
+            and normalized in target_tokens
+        ):
             continue
 
-        if token in GENERIC_WORDS:
-            continue
+        # 임베딩에서는 주장 술어를 살리기 위해
+        # 원래 형태를 그대로 유지한다.
+        kept.append(raw_token)
 
-        if token in target_tokens:
-            continue
+    normalized_claim = " ".join(kept).strip()
 
-        normalized_tokens.append(token)
-
-    return " ".join(normalized_tokens)
+    return normalized_claim or claim
 
 
 def _strip_particle(token: str) -> str:
@@ -230,35 +342,54 @@ def _label_terms(
     return terms
 
 
-def _tfidf_matrix(texts: list[str]):
-    """char TF-IDF 행렬을 생성한다."""
+@lru_cache(maxsize=1)
+def _get_embedding_model() -> Any:
+    """세부 견해 군집용 문장 임베딩 모델을 한 번만 로드한다."""
 
-    vectorizer = TfidfVectorizer(
-        analyzer="char_wb",
-        ngram_range=(2, 4),
+    from sentence_transformers import SentenceTransformer
+
+    config = EncoderConfig()
+
+    return SentenceTransformer(
+        config.model_name,
+        device="cpu",
+        local_files_only=True,
     )
 
-    try:
-        return vectorizer.fit_transform(texts)
-    except ValueError:
-        return None
+
+def _embed_texts(
+    texts: list[str],
+):
+    """정규화한 evidence를 E5 문장 임베딩으로 변환한다."""
+
+    config = EncoderConfig()
+    model = _get_embedding_model()
+
+    return model.encode(
+        [
+            config.passage_prefix + text
+            for text in texts
+        ],
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
 
 
 def _cluster_two_articles(
     texts: list[str],
 ) -> list[list[int]]:
-    """기사 2건은 유사도에 따라 한 그룹 또는 두 그룹으로 나눈다."""
+    """기사 2건을 임베딩 유사도로 한두 세부 견해로 나눈다."""
 
-    matrix = _tfidf_matrix(texts)
-
-    if matrix is None:
-        return [[0], [1]]
+    vectors = _embed_texts(texts)
 
     similarity = float(
-        cosine_similarity(matrix)[0, 1]
+        cosine_similarity(vectors)[0, 1]
     )
 
-    if similarity >= PAIR_SIMILARITY_THRESHOLD:
+    if (
+        similarity
+        >= SINGLE_GROUP_SIMILARITY_THRESHOLD
+    ):
         return [[0, 1]]
 
     return [[0], [1]]
@@ -266,16 +397,9 @@ def _cluster_two_articles(
 
 def _cluster_many_articles(
     texts: list[str],
+    max_subclusters: int = MAX_SUBCLUSTERS,
 ) -> list[list[int]]:
-    """기사 3건 이상은 2~3개 후보 중 가장 적합한 k를 선택한다."""
-
-    matrix = _tfidf_matrix(texts)
-
-    if matrix is None:
-        return [
-            [index]
-            for index in range(len(texts))
-        ]
+    """기사 3건 이상을 임베딩 기준 세부 견해로 나눈다."""
 
     unique_count = len(set(texts))
 
@@ -284,8 +408,30 @@ def _cluster_many_articles(
             list(range(len(texts)))
         ]
 
+    vectors = _embed_texts(texts)
+
+    similarities = cosine_similarity(
+        vectors
+    )
+
+    pair_values = [
+        float(similarities[i, j])
+        for i in range(len(texts))
+        for j in range(i + 1, len(texts))
+    ]
+
+    # 모든 evidence가 충분히 비슷하면 하나의 세부 견해로 유지한다.
+    if (
+        pair_values
+        and min(pair_values)
+        >= SINGLE_GROUP_SIMILARITY_THRESHOLD
+    ):
+        return [
+            list(range(len(texts)))
+        ]
+
     max_k = min(
-        MAX_SUBCLUSTERS,
+        max_subclusters,
         len(texts) - 1,
         unique_count,
     )
@@ -308,16 +454,18 @@ def _cluster_many_articles(
         model = KMeans(
             n_clusters=k,
             random_state=0,
-            n_init=10,
+            n_init=20,
         )
 
-        labels = model.fit_predict(matrix)
+        labels = model.fit_predict(
+            vectors
+        )
 
         if len(set(labels)) < 2:
             continue
 
         score = silhouette_score(
-            matrix,
+            vectors,
             labels,
             metric="cosine",
         )
@@ -336,7 +484,9 @@ def _cluster_many_articles(
 
     groups: dict[int, list[int]] = {}
 
-    for index, label in enumerate(best_labels):
+    for index, label in enumerate(
+        best_labels
+    ):
         groups.setdefault(
             int(label),
             [],
@@ -345,10 +495,142 @@ def _cluster_many_articles(
     return list(groups.values())
 
 
+def _extract_conclusion_action(
+    text: str,
+) -> str | None:
+    """evidence의 최종 주장에 명확한 결론 동작이 있는지 찾는다."""
+
+    claim = _final_claim_sentence(text)
+
+    if not claim:
+        return None
+
+    for action, pattern in CONCLUSION_ACTION_PATTERNS:
+        if re.search(pattern, claim):
+            return action
+
+    return None
+
+
+def _cluster_with_conclusion_constraints(
+    articles: list[dict[str, Any]],
+    texts: list[str],
+    max_subclusters: int,
+) -> list[list[int]]:
+    """
+    명확히 다른 최종 결론은 E5 유사도가 높아도 분리한다.
+
+    동일한 명시 결론은 근거 차이와 무관하게 같은 그룹으로 두고,
+    결론 동작을 명확히 잡지 못한 기사에는 기존 E5 군집을 사용한다.
+    """
+
+    conclusion_keys = [
+        _extract_conclusion_action(
+            article["content"]
+        )
+        for article in articles
+    ]
+
+    explicit_keys = list(
+        dict.fromkeys(
+            key
+            for key in conclusion_keys
+            if key is not None
+        )
+    )
+
+    # 명확히 서로 다른 결론이 2개 이상 잡힌 경우에만
+    # 결론 기준 hard constraint를 적용한다.
+    if (
+        len(explicit_keys) < 2
+        or len(explicit_keys) > max_subclusters
+    ):
+        return _cluster_texts(
+            texts,
+            max_subclusters=max_subclusters,
+        )
+
+    groups = [
+        [
+            index
+            for index, key in enumerate(
+                conclusion_keys
+            )
+            if key == explicit_key
+        ]
+        for explicit_key in explicit_keys
+    ]
+
+    unknown_indices = [
+        index
+        for index, key in enumerate(
+            conclusion_keys
+        )
+        if key is None
+    ]
+
+    if not unknown_indices:
+        return groups
+
+    remaining_slots = (
+        max_subclusters - len(groups)
+    )
+
+    if remaining_slots > 0:
+        unknown_texts = [
+            texts[index]
+            for index in unknown_indices
+        ]
+
+        unknown_groups = _cluster_texts(
+            unknown_texts,
+            max_subclusters=remaining_slots,
+        )
+
+        groups.extend(
+            [
+                [
+                    unknown_indices[index]
+                    for index in unknown_group
+                ]
+                for unknown_group in unknown_groups
+            ]
+        )
+
+        return groups
+
+    # 이미 최대 그룹 수를 모두 사용한 경우,
+    # 결론이 명확하지 않은 기사는 가장 유사한 명시 그룹에 붙인다.
+    vectors = _embed_texts(texts)
+    similarities = cosine_similarity(vectors)
+
+    for unknown_index in unknown_indices:
+        best_group_index = max(
+            range(len(groups)),
+            key=lambda group_index: max(
+                float(
+                    similarities[
+                        unknown_index,
+                        member_index,
+                    ]
+                )
+                for member_index
+                in groups[group_index]
+            ),
+        )
+
+        groups[best_group_index].append(
+            unknown_index
+        )
+
+    return groups
+
+
 def _cluster_texts(
     texts: list[str],
+    max_subclusters: int = MAX_SUBCLUSTERS,
 ) -> list[list[int]]:
-    """한 stance 안의 evidence를 세부 견해 그룹으로 나눈다."""
+    """한 stance 안의 evidence를 임베딩 기반 세부 견해로 나눈다."""
 
     if not texts:
         return []
@@ -359,27 +641,19 @@ def _cluster_texts(
     if len(texts) == 2:
         return _cluster_two_articles(texts)
 
-    return _cluster_many_articles(texts)
+    return _cluster_many_articles(
+        texts,
+        max_subclusters=max_subclusters,
+    )
 
 
 def _fallback_label(
     articles: list[dict[str, Any]],
 ) -> str:
-    """키워드 라벨 생성 실패 시 대표 evidence를 짧게 사용한다."""
+    """대표 evidence의 최종 주장을 라벨로 사용한다."""
 
-    claim = _strip_reporting_tail(
-        _first_sentence(
-            articles[0]["content"]
-        )
-    )
-
-    if len(claim) <= MAX_LABEL_CHARS:
-        return claim
-
-    return (
-        claim[:MAX_LABEL_CHARS]
-        .rstrip()
-        + "…"
+    return _concise_claim_label(
+        articles[0]["content"]
     )
 
 
@@ -387,137 +661,61 @@ def _build_group_labels(
     groups: list[list[dict[str, Any]]],
     target: str,
 ) -> list[str]:
-    """그룹 공통 키워드와 TF-IDF 점수로 짧은 라벨을 만든다."""
+    """
+    각 세부 견해 그룹에서 실제 주장을 담은
+    evidence 문장을 대표 라벨로 사용한다.
+    """
 
-    documents = [
-        " ".join(
-            _strip_reporting_tail(
-                _first_sentence(article["content"])
-            )
-            for article in group
-        )
-        for group in groups
-    ]
-
-    article_term_sets = [
-        [
-            set(
-                _label_terms(
-                    article["content"],
-                    target=target,
-                )
-            )
-            for article in group
-        ]
-        for group in groups
-    ]
-
-    vectorizer = TfidfVectorizer(
-        tokenizer=lambda text: _label_terms(
-            text,
-            target=target,
-        ),
-        token_pattern=None,
-        lowercase=False,
-    )
-
-    try:
-        matrix = vectorizer.fit_transform(documents)
-    except ValueError:
-        return [
-            _fallback_label(group)
-            for group in groups
-        ]
-
-    terms = vectorizer.get_feature_names_out()
-    used_labels: set[str] = set()
     labels = []
 
-    for group_index, group in enumerate(groups):
-        scores = matrix[group_index].toarray()[0]
+    for group in groups:
+        claims = []
 
-        coverage = {
-            str(term): sum(
-                term in term_set
-                for term_set
-                in article_term_sets[group_index]
-            )
-            for term in terms
-        }
-
-        valid = [
-            index
-            for index in range(len(terms))
-            if scores[index] > 0
-        ]
-
-        label = None
-
-        if valid:
-            max_coverage = max(
-                coverage[str(terms[index])]
-                for index in valid
+        for article in group:
+            claim = _final_claim_sentence(
+                article["content"]
             )
 
-            common = [
-                index
-                for index in valid
-                if coverage[str(terms[index])]
-                == max_coverage
-            ]
+            if (
+                claim
+                and claim not in claims
+            ):
+                claims.append(claim)
 
-            common.sort(
-                key=lambda index: (
-                    scores[index],
-                    " " in str(terms[index]),
-                    len(str(terms[index])),
-                ),
-                reverse=True,
-            )
-
-            bigrams = [
-                str(terms[index]).strip()
-                for index in common
-                if " " in str(terms[index])
-            ]
-
-            if bigrams:
-                label = bigrams[0]
-            else:
-                unigrams = [
-                    str(terms[index]).strip()
-                    for index in common
-                    if " " not in str(terms[index])
-                ]
-
-                unigrams = list(dict.fromkeys(unigrams))
-
-                if len(unigrams) >= 2:
-                    label = " · ".join(unigrams[:2])
-                elif unigrams:
-                    label = unigrams[0]
-
-        if label is None or label in used_labels:
-            ranked = sorted(
-                valid,
-                key=lambda index: scores[index],
-                reverse=True,
-            )
-
-            for index in ranked:
-                candidate = str(terms[index]).strip()
-
-                if candidate and candidate not in used_labels:
-                    label = candidate
-                    break
-
-        if label is None:
+        if not claims:
             label = _fallback_label(group)
+        else:
+            # '없다고 했다' 같은 짧은 표현보다
+            # Target 밖의 실질 정보가 많은 주장 문장을 우선한다.
+            def claim_score(claim: str):
+                normalized = (
+                    _normalize_for_similarity(
+                        claim,
+                        target=target,
+                    )
+                )
 
-        if len(label) > MAX_LABEL_CHARS:
-            label = label[:MAX_LABEL_CHARS].rstrip() + "…"
+                content_tokens = {
+                    token
+                    for token in normalized.split()
+                    if len(token) >= 2
+                }
 
-        used_labels.add(label)
+                return (
+                    len(content_tokens),
+                    min(
+                        len(claim),
+                        MAX_LABEL_CHARS,
+                    ),
+                )
+
+            label = max(
+                claims,
+                key=claim_score,
+            )
+
+        label = _concise_claim_label(label)
+
         labels.append(label)
 
     return labels
@@ -528,8 +726,8 @@ def generate_viewpoint_group_labels(
     target: str = "",
 ) -> dict[str, str | None]:
     """
-    같은 stance 안에서 2~3개 세부 견해 그룹을 만들고,
-    형제 그룹 TF-IDF 대조로 article별 라벨을 반환한다.
+    같은 stance 안에서 최대 3개 세부 견해 그룹을 만들고,
+    최종 결론과 문장 임베딩을 기준으로 article별 라벨을 반환한다.
     """
 
     by_stance: dict[
@@ -539,6 +737,7 @@ def generate_viewpoint_group_labels(
 
     result: dict[str, str | None] = {}
     seen_ids: set[str] = set()
+    stances_with_empty_evidence: set[str] = set()
 
     for article in articles:
         article_id = str(article["article_id"])
@@ -568,8 +767,12 @@ def generate_viewpoint_group_labels(
                     "content": content,
                 }
             )
+        else:
+            stances_with_empty_evidence.add(
+                stance
+            )
 
-    for stance_articles in by_stance.values():
+    for stance, stance_articles in by_stance.items():
         normalized_texts = [
             _normalize_for_similarity(
                 article["content"],
@@ -578,8 +781,16 @@ def generate_viewpoint_group_labels(
             for article in stance_articles
         ]
 
-        cluster_indices = _cluster_texts(
-            normalized_texts
+        max_subclusters = (
+            MAX_SUBCLUSTERS - 1
+            if stance in stances_with_empty_evidence
+            else MAX_SUBCLUSTERS
+        )
+
+        cluster_indices = _cluster_with_conclusion_constraints(
+            stance_articles,
+            normalized_texts,
+            max_subclusters=max_subclusters,
         )
 
         groups = [
