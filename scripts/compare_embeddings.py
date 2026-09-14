@@ -1,54 +1,40 @@
 """임베딩 모델 후보를 같은 조건에서 비교한다 — 티켓 11 선정 실험.
 
-지표는 셋이고 뒤로 갈수록 서비스 목적에 가깝다.
+지표는 셋이고 뒤로 갈수록 서비스 목적에 가깝다. 속도는 정제 본문 표본을 CPU 로 배치
+인코딩한 문서/초(EC2 t3.xlarge 를 흉내내도록 스레드를 제한한다). 분리력은 STEP 1 검증기가
+확정한 중복 쌍(같은 글)과 무작위 쌍(무관한 글)의 코사인 간격 — 같은 글도 못 붙이는 모델은
+이슈는 더 못 묶는다. 이슈 재현은 라벨링 파일럿의 이슈 라벨을 군집화로 재현하는 정도(ARI)로,
+본문 파일(news30.jsonl)이 로컬에만 있어 --pilot 로 받을 때만 계산한다.
 
-① 속도 — 정제 본문 표본을 CPU 로 배치 인코딩해 문서/초. EC2(t3.xlarge, 4 vCPU)를
-   흉내내도록 스레드를 제한한다.
-② 분리력 — STEP 1 검증기가 확정한 중복 쌍(같은 글)과 무작위 쌍(무관한 글)의
-   코사인 간격. 같은 글도 못 붙이는 모델은 이슈는 더 못 묶는다.
-③ 이슈 재현 — 라벨링 파일럿 30건의 이슈 라벨을 군집화로 재현하는 정도(ARI).
-   본문 파일(news30.jsonl)이 로컬에만 있어 --pilot 로 받을 때만 계산한다.
-
-임베딩 입력은 설계(STEP 2)대로 "제목 + 정제 본문 앞부분"이다.
+임베딩 입력은 운영 인코더(hannun.embedding.encoder)와 같은 "제목 + 정제 본문 앞부분"이다.
 
     .venv312/Scripts/python.exe scripts/compare_embeddings.py \
         --gold-root local/gold2023 --date 2023-03-15 --out local/embed_compare.json
 """
 
 import argparse
-import csv
 import json
 import random
-import time
-from dataclasses import dataclass
+from dataclasses import replace
 
 import numpy as np
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics import adjusted_rand_score
 
 from hannun.dedup.candidates import find_candidate_pairs
 from hannun.dedup.verify import verify_pairs
+from hannun.embedding.encoder import EncoderConfig, build_input, encode_texts, load_model
 from hannun.ingest import GoldStore
 from hannun.preprocess import CleanStore
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    hf_id: str
-    # e5 계열은 학습 때 붙인 접두어를 인코딩 때도 붙여야 성능이 나온다
-    passage_prefix: str = ""
-
+from hannun.quality.goldenset import consensus_components, load_labels
 
 MODELS = {
-    "ko-sroberta": ModelSpec("jhgan/ko-sroberta-multitask"),
-    "e5-small-ko": ModelSpec("dragonkue/multilingual-e5-small-ko-v2", passage_prefix="passage: "),
-    "kure-v1": ModelSpec("nlpai-lab/KURE-v1"),
+    "ko-sroberta": EncoderConfig(model_name="jhgan/ko-sroberta-multitask", passage_prefix=""),
+    "e5-small-ko": EncoderConfig(model_name="dragonkue/multilingual-e5-small-ko-v2"),
+    "kure-v1": EncoderConfig(model_name="nlpai-lab/KURE-v1", passage_prefix=""),
 }
 
 SEED = 20260901
-
-
-def build_input(title, clean_text, body_chars):
-    # 제목이 기사의 핵심 주장·사건을 담고, 본문 앞부분이 육하원칙을 담는다(역피라미드)
-    return f"{title}\n{clean_text[:body_chars]}"
 
 
 def load_day(gold_root, date_str):
@@ -65,8 +51,7 @@ def load_day(gold_root, date_str):
 def duplicate_and_random_pairs(rows, sample_cap):
     """STEP 1 후보→검증을 그대로 돌려 확정 쌍을 얻고, 같은 수의 무작위 쌍을 뽑는다."""
     texts = dict(zip(rows.article_id, rows.content_clean))
-    candidates = find_candidate_pairs(
-        [{"article_id": a, "text": t} for a, t in texts.items()])
+    candidates = find_candidate_pairs([{"article_id": a, "text": t} for a, t in texts.items()])
     verified = verify_pairs(texts, candidates.pairs)
     confirmed = sorted(verified.confirmed)[:sample_cap]
 
@@ -81,23 +66,9 @@ def duplicate_and_random_pairs(rows, sample_cap):
     return confirmed, randoms
 
 
-def load_model(spec, threads):
-    # torch 임포트를 함수 안에 두는 이유: 쌍 생성 등 다른 기능은 torch 없는 venv 에서도 돈다
-    import torch
-    from sentence_transformers import SentenceTransformer
-
-    torch.set_num_threads(threads)
-    return SentenceTransformer(spec.hf_id, device="cpu")
-
-
-def encode(model, spec, texts, batch_size):
-    """인코딩하고 (정규화 벡터, 문서/초) 를 돌려준다."""
-    payload = [spec.passage_prefix + t for t in texts]
-    t0 = time.monotonic()
-    vectors = model.encode(payload, batch_size=batch_size, normalize_embeddings=True,
-                           show_progress_bar=False)
-    elapsed = time.monotonic() - t0
-    return np.asarray(vectors), round(len(texts) / elapsed, 1)
+def encode(model, config, texts):
+    vectors, docs_per_s = encode_texts(model, config, texts)
+    return np.asarray(vectors, dtype="float32"), docs_per_s
 
 
 def pair_cosines(vectors, index_of, pairs):
@@ -105,57 +76,20 @@ def pair_cosines(vectors, index_of, pairs):
 
 
 def load_pilot(articles_path, labels_path, body_chars, min_agree):
-    """파일럿 30건 본문과 합의 정답을 만든다.
-
-    라벨의 이슈 번호는 라벨러마다 제각각이라 그대로 비교할 수 없다. 대신 "두 기사를
-    같은 이슈로 묶은 라벨러 수"를 세어 min_agree 명 이상이면 같은 이슈로 잇고,
-    연결 요소를 합의 이슈로 삼는다.
-    """
+    """파일럿 본문과 합의 정답을 만든다. 합의 방식은 goldenset.consensus_components 와 같다."""
     bodies = {}
     with open(articles_path, encoding="utf-8") as f:
         for line in f:
             record = json.loads(line)
             bodies[record["article_id"]] = build_input(record["title"], record["body"], body_chars)
 
-    by_labeler = {}
-    # utf-8-sig: 엑셀을 거친 CSV 는 BOM 이 붙어 첫 키가 '﻿article_id' 가 된다
-    with open(labels_path, encoding="utf-8-sig", newline="") as f:
-        for row in csv.DictReader(f):
-            by_labeler.setdefault(row["labeler"], {})[row["article_id"]] = row["cluster"]
-
-    ids = sorted(bodies)
-    together = {}
-    for clusters in by_labeler.values():
-        for i, a in enumerate(ids):
-            for b in ids[i + 1:]:
-                if a in clusters and b in clusters and clusters[a] == clusters[b]:
-                    together[(a, b)] = together.get((a, b), 0) + 1
-
-    neighbors = {a: set() for a in ids}
-    for (a, b), votes in together.items():
-        if votes >= min_agree:
-            neighbors[a].add(b)
-            neighbors[b].add(a)
-    gold, group = {}, 0
-    for seed in ids:
-        if seed in gold:
-            continue
-        stack = [seed]
-        while stack:
-            node = stack.pop()
-            if node in gold:
-                continue
-            gold[node] = group
-            stack.extend(neighbors[node])
-        group += 1
+    gold = consensus_components(load_labels(labels_path), min_agree)
+    ids = sorted(a for a in bodies if a in gold)
     return {"ids": ids, "texts": [bodies[a] for a in ids],
-            "gold": [gold[a] for a in ids], "n_issues": group}
+            "gold": [gold[a] for a in ids], "n_issues": len({gold[a] for a in ids})}
 
 
 def pilot_ari(vectors, gold):
-    from sklearn.cluster import AgglomerativeClustering
-    from sklearn.metrics import adjusted_rand_score
-
     predicted = AgglomerativeClustering(n_clusters=len(set(gold)), metric="cosine",
                                         linkage="average").fit_predict(vectors)
     return adjusted_rand_score(gold, predicted)
@@ -197,13 +131,14 @@ def main():
               "threads": args.threads, "body_chars": args.body_chars,
               "pilot_issues": pilot["n_issues"] if pilot else None, "models": {}}
     for name in args.models:
-        spec = MODELS[name]
-        model = load_model(spec, args.threads)
-        vectors, docs_per_s = encode(model, spec, texts, args.batch_size)
+        config = replace(MODELS[name], threads=args.threads, batch_size=args.batch_size,
+                         body_chars=args.body_chars)
+        model = load_model(config)
+        vectors, docs_per_s = encode(model, config, texts)
         dup = pair_cosines(vectors, index_of, confirmed)
         rnd = pair_cosines(vectors, index_of, randoms)
         entry = {
-            "hf_id": spec.hf_id,
+            "hf_id": config.model_name,
             "dim": int(vectors.shape[1]),
             "docs_per_s": docs_per_s,
             "dup_cos_p10": round(float(np.percentile(dup, 10)), 4) if dup else None,
@@ -213,7 +148,7 @@ def main():
         if dup and rnd:
             entry["separation"] = round(entry["dup_cos_p10"] - entry["random_cos_p90"], 4)
         if pilot:
-            pilot_vectors, _ = encode(model, spec, pilot["texts"], args.batch_size)
+            pilot_vectors, _ = encode(model, config, pilot["texts"])
             entry["pilot_ari"] = round(pilot_ari(pilot_vectors, pilot["gold"]), 4)
         report["models"][name] = entry
         print(f"{name}: {json.dumps(entry, ensure_ascii=False)}")

@@ -1,4 +1,4 @@
-"""군집 파라미터 스윕 — 조합별 재군집을 골드셋 400쌍으로 자동 채점한다 (티켓 104).
+"""군집 파라미터 스윕 — 조합별 재군집을 골드셋 쌍 라벨로 자동 채점한다 (티켓 104).
 
 과분리(기계가 사람 기준보다 잘게 쪼갬)를 줄이는 균형점을 찾는다. UMAP 은 이웃 수별로
 한 번만 계산해 캐시하고(가장 비싼 단계), min_cluster_size 는 그 위에서 바꿔 돈다.
@@ -10,11 +10,14 @@
 """
 
 import argparse
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from score_goldenset_issue_pairs import load_pairs, score_pairs  # noqa: E402
+import numpy as np
+
+from hannun.clustering import ClusterConfig, IssueStore, cluster, reduce_vectors
+from hannun.embedding import EmbeddingStore
+from hannun.quality import QualityStore, qualify
+from hannun.quality.goldenset import load_pairs, score_pairs
 
 
 def main():
@@ -27,12 +30,6 @@ def main():
     p.add_argument("--min-cluster-sizes", type=int, nargs="+", default=[3, 5, 8])
     p.add_argument("--umap-neighbors", type=int, nargs="+", default=[15, 30, 50])
     args = p.parse_args()
-
-    import numpy as np
-
-    from hannun.clustering import ClusterConfig, IssueStore, cluster, reduce_vectors
-    from hannun.embedding import EmbeddingStore
-    from hannun.quality import QualityStore, qualify
 
     embeddings = EmbeddingStore(args.gold_root)
     pairs = load_pairs(args.labels)
@@ -53,16 +50,16 @@ def main():
                             reduce_fn=lambda m: points)
             qualify(IssueStore(root), embeddings, QualityStore(root),
                     start_date=args.start_date, end_date=args.end_date)
-            q = QualityStore(root).read(args.start_date, args.end_date)
-            label_of = dict(zip(q.article_id, q.issue_local))
+            quality = QualityStore(root).read(args.start_date, args.end_date)
+            label_of = dict(zip(quality.article_id, quality.issue_local))
             score = score_pairs(pairs, label_of, vector_of)
             rows.append({
                 "mcs": mcs, "nn": nn,
                 "issues": stats.issues, "noise": stats.noise, "largest": stats.largest_issue,
-                "precision": score["같은이슈_예측쌍"]["묶음_정밀도(사람도_O)"],
-                "n_same": score["같은이슈_예측쌍"]["n"],
-                "oversplit": score["경계쌍(다른이슈_고유사도)"]["과분리율(사람은_O)"],
-                "recall": score["표본내_동거_재현율"],
+                "precision": score["same_issue_predicted"]["precision"],
+                "n_same": score["same_issue_predicted"]["n"],
+                "oversplit": score["boundary"]["oversplit_rate"],
+                "recall": score["recall_in_sample"],
             })
             r = rows[-1]
             print(f"  mcs={mcs} nn={nn}: 이슈 {r['issues']} 노이즈 {r['noise']} | "
