@@ -67,6 +67,7 @@ def test_inheritance_split_and_new(tmp_path):
     status_of = dict(zip(w2["article_id"], w2["status"]))
 
     assert stats.issues == 4 and stats.inherited == 2 and stats.created == 2 and stats.splits == 1
+    assert stats.retired == 0   # 첫 실행은 직전 창 기준 — 이슈 0·1 모두 누군가 이어받았다
     # 겹침 과반인 군집이 ID 를 승계한다
     assert id_of["a2"] == id_a and status_of["a2"] == "inherited"
     # 분열: 이슈 1 을 주장한 두 군집 중 하나만 승계, 다른 하나는 새 ID
