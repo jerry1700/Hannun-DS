@@ -38,6 +38,7 @@ class SuccessionStats:
     inherited: int = 0
     created: int = 0
     splits: int = 0
+    retired: int = 0   # 승계원에 있었는데 아무 군집도 이어받지 않은 이슈 — 출렁임 감시용
     articles: int = 0
 
     def to_dict(self):
@@ -108,6 +109,7 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
         entries.sort(reverse=True)
         assigned[entries[0][1]] = prev_issue_id
         stats.splits += len(entries) - 1
+    stats.retired = len(set(prev_id_of.values()) - set(assigned.values()))
 
     # 채번은 전 창 통틀어 최대 ID 다음부터 — 자기-승계가 재실행 멱등을 책임지므로,
     # 옛 "현재 창 제외" 방식(재실행에서 죽은 이슈의 ID 가 다른 군집에 재사용될
@@ -143,6 +145,6 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
     log.info(
         f"succeed done: window={stats.window_start} issues={stats.issues} "
         f"inherited={stats.inherited} created={stats.created} splits={stats.splits} "
-        f"(prev={stats.prev_window}, self={stats.self_window})"
+        f"retired={stats.retired} (prev={stats.prev_window}, self={stats.self_window})"
     )
     return stats
