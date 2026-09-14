@@ -21,9 +21,9 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="현재 창 시작 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--end-date", default=None, help="현재 창 끝 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--publisher-weight", type=float, default=FeedConfig.publisher_weight,
-                   help="화제성에서 언론사 다양성 가중 (기본 2.0)")
+                   help=f"화제성에서 언론사 다양성 가중 (기본 {FeedConfig.publisher_weight})")
     p.add_argument("--recency-tau-hours", type=float, default=FeedConfig.recency_tau_hours,
-                   help="화제성 신선도 반감 상수(시간, 기본 24)")
+                   help=f"화제성 신선도 반감 상수(시간, 기본 {FeedConfig.recency_tau_hours})")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p
 

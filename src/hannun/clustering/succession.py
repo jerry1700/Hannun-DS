@@ -2,12 +2,12 @@
 
 클러스터 번호는 재군집마다 바뀌지만 기사는 불변이다. 새 군집의 구성원이 직전 창에서
 어느 이슈에 있었는지 득표로 세어, 과반 겹침이면 그 이슈의 서비스 ID 를 승계한다.
-시뮬레이션 실측(티켓 97): 창당 승계 42~50%(이슈 수명 분포와 부합), 문턱 0.3↔0.5
-차이 3%p 로 둔감, 분열 ~7%·병합 ~4% 는 규칙으로 처리.
+분열(한 이슈를 여럿이 주장)은 최다 득표가 이어받고, 병합은 득표가 가장 많은 쪽으로
+자연히 붙는다. 문턱의 근거와 시뮬레이션·운영 실측은 티켓 97.
 
 자기-승계: 같은 창의 직전 실행이 있으면 그 배정이 직전 창보다 우선한다 — 창 하나를
-여러 번 재계산(15분 재군집, 데이터가 늘어난 재실행)해도 ID 가 흔들리지 않는 근거.
-운영 실측(09-09): 이게 없던 시절 같은 창 재실행이 ID 를 전부 재발급했다.
+여러 번 재계산(매시 재군집, 데이터가 늘어난 재실행)해도 ID 가 흔들리지 않는 근거.
+이게 없던 시절에는 같은 창 재실행이 ID 를 전부 재발급했다.
 """
 
 import collections
@@ -50,10 +50,11 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
     """현재 창(재군집 직후)의 issue_local 에 서비스 issue_id 를 배정해 레지스트리에 쓴다.
 
     승계원은 둘이다: 직전 창(현재 창 시작일보다 앞선 것 중 가장 최근)과, 있다면
-    **같은 창의 직전 실행**(자기-승계 — 이쪽이 우선). 그래서 같은 창을 데이터가
+    같은 창의 직전 실행(자기-승계 — 이쪽이 우선). 그래서 같은 창을 데이터가
     늘어난 채 재실행해도 살아 있는 이슈의 ID 는 유지되고, 순수 재실행은 같은
     결과를 낸다. status 는 "직전 창 대비 계보"의 의미를 지키기 위해 자기-승계
-    시 이전 값을 그대로 물려받는다(이 창에서 태어난 이슈는 재실행 뒤에도 new).
+    시 이전 값을 그대로 물려받는다 — 이 창에서 태어난 이슈는 재실행 뒤에도 new 로
+    남아야 BE 통계가 흔들리지 않는다.
     """
     config = config or SuccessionConfig()
     stats = SuccessionStats()
@@ -81,8 +82,7 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
         prev_id_of = dict(zip(prev_table.column("article_id").to_pylist(),
                               prev_table.column("issue_id").to_pylist()))
 
-    # 자기-승계 — 같은 창의 직전 실행이 있으면 그 배정이 직전 창보다 우선한다
-    # (같은 article_id 가 양쪽에 있으면 현재 창의 배정이 최신 진실)
+    # 같은 article_id 가 직전 창과 같은 창의 직전 실행 양쪽에 있으면 후자가 최신 진실이라 덮어쓴다
     self_status_of = {}
     if stats.window_start in starts:
         stats.self_window = True
@@ -111,21 +111,18 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
         stats.splits += len(entries) - 1
     # 사라진 이슈는 "바로 직전" 대비로 센다 — 자기-승계 실행이면 같은 창의 직전 실행,
     # 첫 실행이면 직전 창. 둘을 합쳐 세면 창 전진 때 자연 소멸한 어제 이슈가 재실행마다
-    # 반복 집계돼(운영 실측 159) 출렁임 신호가 묻힌다
+    # 반복 집계돼 출렁임 신호가 묻힌다
     base_ids = set(self_status_of) if stats.self_window else set(prev_id_of.values())
     stats.retired = len(base_ids - set(assigned.values()))
 
-    # 채번은 전 창 통틀어 최대 ID 다음부터 — 자기-승계가 재실행 멱등을 책임지므로,
-    # 옛 "현재 창 제외" 방식(재실행에서 죽은 이슈의 ID 가 다른 군집에 재사용될
-    # 위험이 있던)은 버린다
+    # 채번은 전 창 통틀어 최대 ID 다음부터. 현재 창을 빼고 세면 재실행에서 죽은 이슈의 ID 가
+    # 다른 군집에 재사용된다 — 재실행 멱등은 자기-승계가 책임진다
     next_id = registry.max_issue_id() + 1
     succeeded_at = datetime.now(timezone.utc)
     out = []
     for label in sorted(members):
         if label in assigned:
             issue_id = assigned[label]
-            # 자기-승계로 이어받은 이슈는 계보(status)도 그대로 — 이 창에서
-            # 태어난 이슈는 재실행 뒤에도 new 로 남아야 BE 통계가 안 흔들린다
             status = self_status_of.get(issue_id, "inherited")
             stats.inherited += 1
         else:

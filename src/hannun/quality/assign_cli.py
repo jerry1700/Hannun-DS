@@ -18,7 +18,7 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="현재 창 시작 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--end-date", default=None, help="현재 창 끝 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--assign-min-sim", type=float, default=QualityConfig.assign_min_sim,
-                   help="배정 최소 코사인 유사도 (기본 0.85, 재군집 대비 일치 0.789 실측)")
+                   help=f"배정 최소 코사인 유사도 (기본 {QualityConfig.assign_min_sim})")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p
 

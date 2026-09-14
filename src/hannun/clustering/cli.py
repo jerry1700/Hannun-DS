@@ -18,7 +18,7 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--end-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--min-cluster-size", type=int, default=ClusterConfig.min_cluster_size,
-                   help="이슈로 인정할 최소 기사 수 (기본 3)")
+                   help=f"이슈로 인정할 최소 기사 수 (기본 {ClusterConfig.min_cluster_size})")
     p.add_argument("--umap-dims", type=int, default=ClusterConfig.umap_dims, help="0 이면 축소 생략")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p

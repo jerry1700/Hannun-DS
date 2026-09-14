@@ -55,7 +55,7 @@ def cluster(embeddings: EmbeddingStore, store: IssueStore, config: ClusterConfig
     # 모델이 섞인 벡터 공간에서는 거리가 의미를 잃는다 — 조용히 이상한 이슈를 내느니 멈춘다
     models = set(table.column("model").to_pylist())
     if len(models) > 1:
-        raise ValueError(f"창 안에 임베딩 모델이 섞여 있습니다: {sorted(models)}")
+        raise ValueError(f"embedding models are mixed within the window: {sorted(models)}")
 
     matrix = np.array(table.column("vector").to_pylist(), dtype="float32")
     if reduce_fn is not None:

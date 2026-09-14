@@ -53,24 +53,35 @@ def build_stores(tmp_path):
 def test_close_new_article_is_assigned(tmp_path):
     issues, embeddings = build_stores(tmp_path)
     stats = assign(issues, embeddings)
-    df = issues.read().set_index("article_id")
+    row = issues.read().set_index("article_id").loc["new_close"]
 
     assert stats.new_articles == 3 and stats.assigned == 1 and stats.unassigned == 2
-    row = df.loc["new_close"]
     assert row.issue_local == 1 and row.published_date == "2026-08-21"
-    # 배정 반영 후 이슈 규모가 기존 구성원 행에도 갱신된다
-    assert row.issue_size == 5 and df.loc["real0"].issue_size == 5
 
 
-def test_far_and_structured_adjacent_stay_noise(tmp_path):
+def test_assignment_updates_issue_size_of_existing_members(tmp_path):
     issues, embeddings = build_stores(tmp_path)
     assign(issues, embeddings)
     df = issues.read().set_index("article_id")
 
-    assert df.loc["new_far"].issue_local == -1
+    assert df.loc["new_close"].issue_size == 5 and df.loc["real0"].issue_size == 5
+
+
+def test_far_new_article_stays_noise(tmp_path):
+    issues, embeddings = build_stores(tmp_path)
+    assign(issues, embeddings)
+
+    assert issues.read().set_index("article_id").loc["new_far"].issue_local == -1
+
+
+def test_structured_issue_does_not_take_new_articles(tmp_path):
     # 정형 이슈(0) 바로 옆이라도 정형은 배정 대상이 아니다
+    issues, embeddings = build_stores(tmp_path)
+    assign(issues, embeddings)
+    df = issues.read().set_index("article_id")
+
     assert df.loc["new_bot"].issue_local == -1
-    assert df.loc["bot0"].issue_size == 10  # 정형 이슈 규모는 그대로
+    assert df.loc["bot0"].issue_size == 10
 
 
 def test_rerun_assigns_nothing(tmp_path):

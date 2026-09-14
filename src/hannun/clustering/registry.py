@@ -7,6 +7,7 @@
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from hannun.ingest.gold import write_parquet_atomic
@@ -17,10 +18,8 @@ REGISTRY_SCHEMA = pa.schema(
         ("window_end", pa.string()),
         ("article_id", pa.string()),
         ("published_date", pa.string()),
-        # 창 안의 임시 번호(issue 테이블과 조인 키) ↔ 서비스 이슈 ID (재군집을 넘어 유지)
         ("issue_local", pa.int32()),
         ("issue_id", pa.int64()),
-        # inherited=직전 창에서 승계, new=이 창에서 탄생
         ("status", pa.string()),
         ("succeeded_at", pa.timestamp("us", tz="UTC")),
     ]
@@ -28,7 +27,12 @@ REGISTRY_SCHEMA = pa.schema(
 
 
 class RegistryStore:
-    """<root>/issue_registry/window_start=YYYY-MM-DD/registry.parquet."""
+    """<root>/issue_registry/window_start=YYYY-MM-DD/registry.parquet.
+
+    issue_local 은 창 안의 임시 번호(issue 테이블과의 조인 키), issue_id 는 재군집을 넘어
+    유지되는 서비스 이슈 ID 다. status 는 직전 창에서 이어받았으면 inherited, 이 창에서
+    태어났으면 new. 컬럼 정의는 티켓 97 에 있다.
+    """
 
     def __init__(self, root):
         self.root = Path(root)
@@ -57,13 +61,11 @@ class RegistryStore:
         ]
         return sorted(starts)
 
-    def max_issue_id(self, exclude_window: str | None = None):
-        """지금까지 발급된 최대 서비스 ID. 재실행 멱등을 위해 현재 창은 제외할 수 있다."""
-        result = -1
+    def max_issue_id(self):
+        """지금까지 모든 창에 발급된 최대 서비스 ID. 아직 없으면 -1."""
+        highest = -1
         for start in self.window_starts():
-            if start == exclude_window:
-                continue
             column = pq.read_table(self.window_path(start), columns=["issue_id"]).column("issue_id")
             if len(column):
-                result = max(result, pa.compute.max(column).as_py())
-        return result
+                highest = max(highest, pc.max(column).as_py())
+        return highest
