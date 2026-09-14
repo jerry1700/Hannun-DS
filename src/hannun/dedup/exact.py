@@ -16,7 +16,7 @@ class ExactDuplicates:
 def find_exact_duplicates(rows: list[dict]):
     """원문 content 의 SHA-256 이 같은 기사들을 묶고 대표를 정한다.
 
-    해시는 정제본이 아니라 **원문**으로 한다. 통신사 전재는 글자까지 같아서 여기서 걸리고,
+    해시는 정제본이 아니라 원문으로 한다. 통신사 전재는 글자까지 같아서 여기서 걸리고,
     공백 하나라도 다르면 완전 중복이 아니므로 다음 단계(MinHash)로 넘긴다.
     rows 의 각 항목은 article_id, content, published_at, publisher_id 를 가진 딕셔너리다.
     """
@@ -25,16 +25,16 @@ def find_exact_duplicates(rows: list[dict]):
         digest = hashlib.sha256(row["content"].encode("utf-8")).hexdigest()
         by_hash[digest].append(row)
 
-    result = ExactDuplicates()
+    found = ExactDuplicates()
     for group in by_hash.values():
         if len(group) < 2:
             continue
         representative = min(group, key=_representative_key)
-        result.groups += 1
+        found.groups += 1
         for row in group:
             if row["article_id"] != representative["article_id"]:
-                result.duplicate_of[row["article_id"]] = representative["article_id"]
-    return result
+                found.duplicate_of[row["article_id"]] = representative["article_id"]
+    return found
 
 
 def _representative_key(row):

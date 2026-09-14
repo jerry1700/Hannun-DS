@@ -13,9 +13,9 @@ SUPPORTED_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 
 @dataclass
 class RawRecord:
-    """파싱 직후의 레코드. data 가 None 이면 error 에 사유가 있다."""
+    """파싱 직후의 레코드. record 가 None 이면 error 에 사유가 있다."""
 
-    data: dict | None
+    record: dict | None
     source_ref: str
     error: str | None = None
 
@@ -58,26 +58,26 @@ def _iter_jsonl(f):
             ref = f"{f}:{lineno}"
             # 깨진 줄 하나 때문에 파일 전체를 버리지 않는다. DLQ 와 같은 사고방식.
             try:
-                obj = json.loads(s)
+                parsed = json.loads(s)
             except json.JSONDecodeError as e:
                 yield RawRecord(None, ref, f"invalid JSON: {e.msg} (col {e.colno})")
                 continue
-            if not isinstance(obj, dict):
+            if not isinstance(parsed, dict):
                 yield RawRecord(None, ref, "JSON line is not an object")
                 continue
-            yield RawRecord(obj, ref)
+            yield RawRecord(parsed, ref)
 
 
 def _iter_json(f):
     try:
-        obj = json.loads(f.read_text(encoding="utf-8-sig"))
+        parsed = json.loads(f.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as e:
         yield RawRecord(None, str(f), f"invalid JSON: {e.msg} (line {e.lineno}, col {e.colno})")
         return
-    if isinstance(obj, dict):
-        yield RawRecord(obj, str(f))
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
+    if isinstance(parsed, dict):
+        yield RawRecord(parsed, str(f))
+    elif isinstance(parsed, list):
+        for i, item in enumerate(parsed):
             ref = f"{f}[{i}]"
             if isinstance(item, dict):
                 yield RawRecord(item, ref)

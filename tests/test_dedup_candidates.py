@@ -64,9 +64,12 @@ def test_same_input_gives_same_result():
     assert first.pairs == second.pairs
 
 
-def test_shingle_set_size_and_config():
+def test_shingle_set_slides_over_text():
     assert "정부는 " in shingle_set(LONG)
     assert len(shingle_set("가나다라", 4)) == 1
+
+
+def test_lower_containment_threshold_admits_more_pairs():
     loose = find_candidate_pairs(rows(a=LONGER, c=SHORT_CONTAINED),
                                  CandidateConfig(containment_threshold=0.5))
     assert ("a", "c") in loose.pairs

@@ -12,11 +12,8 @@ DEDUP_SCHEMA = pa.schema(
         ("article_id", pa.string()),
         ("publisher_id", pa.string()),
         ("published_date", pa.string()),
-        # null 이면 접히지 않은 기사(대표 또는 단독). 값이 있으면 그 대표 밑으로 접혔다
         ("duplicate_of", pa.string()),
-        # 대표 = 접힌 것 포함 묶음 크기, 단독 = 1, 접힌 기사 = 0
         ("duplicate_count", pa.int32()),
-        # 접힌 근거: sha256 / cosine / containment / chained. 접히지 않았으면 null
         ("method", pa.string()),
         ("window_start", pa.string()),
         ("window_end", pa.string()),
@@ -27,6 +24,10 @@ DEDUP_SCHEMA = pa.schema(
 
 class DedupStore:
     """<root>/dedup/published_date=YYYY-MM-DD/dedup.parquet.
+
+    접힌 기사는 duplicate_of 에 대표 article_id 를, method 에 접힌 근거(sha256·cosine·containment)를
+    갖고 duplicate_count 는 0 이다. 대표는 duplicate_count 에 접힌 것을 포함한 묶음 크기를, 단독
+    기사는 1 을 갖는다. 컬럼 정의는 티켓 10 에 있다.
 
     중복은 창(window) 전체를 놓고 계산되므로 한 파티션의 행이 다른 파티션의 기사를
     대표로 가리킬 수 있다. 같은 창을 다시 돌리면 같은 파일이 나온다.

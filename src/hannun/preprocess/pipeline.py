@@ -45,19 +45,19 @@ def preprocess(gold: GoldStore, clean: CleanStore, config: PreprocessConfig | No
         rows = []
         for article_id, publisher_id, content in zip(*(table.column(c).to_pylist()
                                                         for c in ("article_id", "publisher_id", "content"))):
-            result = clean_content(content, publisher_id, config)
-            hits.update(result.rules_applied)
-            stats.removed_chars += result.removed_chars
-            setattr(stats, result.status, getattr(stats, result.status) + 1)
+            cleaned = clean_content(content, publisher_id, config)
+            hits.update(cleaned.rules_applied)
+            stats.removed_chars += cleaned.removed_chars
+            setattr(stats, cleaned.status, getattr(stats, cleaned.status) + 1)
             rows.append({
                 "article_id": article_id,
                 "publisher_id": publisher_id,
                 "published_date": date_str,
-                "content_clean": result.content_clean,
-                "content_clean_len": len(result.content_clean),
-                "clean_status": result.status,
-                "rules_applied": result.rules_applied,
-                "removed_chars": result.removed_chars,
+                "content_clean": cleaned.content_clean,
+                "content_clean_len": len(cleaned.content_clean),
+                "clean_status": cleaned.status,
+                "rules_applied": cleaned.rules_applied,
+                "removed_chars": cleaned.removed_chars,
                 "rules_version": config.rules_version,
                 "cleaned_at": cleaned_at,
             })

@@ -1,6 +1,5 @@
-import json
-
 import pandas as pd
+import pytest
 
 from hannun.dedup import DedupConfig, DedupStore, dedup
 from hannun.ingest import GoldStore, ingest
@@ -32,36 +31,23 @@ ARTICLES = [
     ("unrelated", "hani", "2026-08-20T08:00:00Z", OTHER),
     ("next_day", "dt", "2026-08-21T01:00:00Z", OTHER + " 다음 경기는 주말에 열린다."),
 ]
+# 본문이 저작권 꼬리 한 줄뿐인 속보 쌍 — 기사의 실제 내용은 제목에 있고 본문만 서로 같다
+SHORT_BODY = "ⓒ 예제뉴스. 무단 전재 및 재배포 금지."
+SHORT_PAIR = [
+    ("breaking_fire", "asiae", "2026-08-20T05:00:00Z", SHORT_BODY),
+    ("breaking_north", "asiae", "2026-08-20T06:00:00Z", SHORT_BODY),
+]
 
 
-def build_stores(tmp_path, articles=ARTICLES):
-    lines = []
-    for alias, publisher, published, content in articles:
-        url = f"https://news.example.com/{alias}"
-        lines.append(json.dumps({
-            "schema_version": "1.0",
-            "article_id": expected_article_id(publisher, url),
-            "publisher_id": publisher,
-            "publisher_name": publisher,
-            "source_type": "RSS",
-            "url": url,
-            "title": f"{alias} 제목",
-            "content": content,
-            "author": None,
-            "category": "POLITICS",
-            "category_str": None,
-            "thumbnail_url": None,
-            "language": "ko",
-            "published_at": published,
-        }, ensure_ascii=False))
-    source = tmp_path / "articles.jsonl"
-    source.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-    root = tmp_path / "gold"
-    gold, clean, store = GoldStore(root), CleanStore(root), DedupStore(root)
-    ingest([source], gold)
-    preprocess(gold, clean, PreprocessConfig(min_clean_len=10))
-    return gold, clean, store
+@pytest.fixture
+def stores(tmp_path, article_jsonl):
+    def build(articles=ARTICLES):
+        root = tmp_path / "gold"
+        gold, clean, store = GoldStore(root), CleanStore(root), DedupStore(root)
+        ingest([article_jsonl(articles)], gold)
+        preprocess(gold, clean, PreprocessConfig(min_clean_len=10))
+        return gold, clean, store
+    return build
 
 
 def alias_id(alias):
@@ -69,8 +55,8 @@ def alias_id(alias):
     return expected_article_id(publisher, f"https://news.example.com/{alias}")
 
 
-def test_full_pipeline_folds_exact_near_and_containment(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_full_pipeline_folds_exact_near_and_containment(stores):
+    gold, clean, store = stores()
     stats = dedup(gold, clean, store)
     df = store.read().set_index("article_id")
 
@@ -82,14 +68,20 @@ def test_full_pipeline_folds_exact_near_and_containment(tmp_path):
         assert row.duplicate_of == original, alias
         assert row.method == expected_method, alias
         assert row.duplicate_count == 0, alias
-    # 대표의 count 는 exact 로 접힌 것까지 합산해 자기 포함 4
-    assert df.loc[original].duplicate_count == 4
+
+
+def test_representative_count_includes_exact_folds(stores):
+    gold, clean, store = stores()
+    dedup(gold, clean, store)
+    row = store.read().set_index("article_id").loc[alias_id("original")]
+
+    assert row.duplicate_count == 4
     # parquet 의 null 은 판다스에서 NaN 으로 온다 — None 비교가 아니라 isna 로 본다
-    assert pd.isna(df.loc[original].duplicate_of)
+    assert pd.isna(row.duplicate_of)
 
 
-def test_singles_keep_count_one_and_no_method(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_singles_keep_count_one_and_no_method(stores):
+    gold, clean, store = stores()
     dedup(gold, clean, store)
     df = store.read().set_index("article_id")
 
@@ -99,8 +91,8 @@ def test_singles_keep_count_one_and_no_method(tmp_path):
         assert row.duplicate_count == 1
 
 
-def test_partitions_cover_window_and_record_it(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_partitions_cover_window_and_record_it(stores):
+    gold, clean, store = stores()
     stats = dedup(gold, clean, store)
 
     assert stats.partitions == ["2026-08-20", "2026-08-21"] == store.partition_dates()
@@ -108,16 +100,16 @@ def test_partitions_cover_window_and_record_it(tmp_path):
     assert set(df.window_start) == {"2026-08-20"} and set(df.window_end) == {"2026-08-21"}
 
 
-def test_date_range_limits_the_window(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_date_range_limits_the_window(stores):
+    gold, clean, store = stores()
     stats = dedup(gold, clean, store, start_date="2026-08-21")
 
     assert stats.rows == 1 and stats.partitions == ["2026-08-21"]
     assert store.partition_dates() == ["2026-08-21"]
 
 
-def test_rerun_is_deterministic(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_rerun_is_deterministic(stores):
+    gold, clean, store = stores()
     dedup(gold, clean, store)
     first = store.read(columns=["article_id", "duplicate_of", "duplicate_count", "method"])
     dedup(gold, clean, store)
@@ -126,8 +118,8 @@ def test_rerun_is_deterministic(tmp_path):
     assert first.values.tolist() == second.values.tolist()
 
 
-def test_stats_add_up(tmp_path):
-    gold, clean, store = build_stores(tmp_path)
+def test_stats_add_up(stores):
+    gold, clean, store = stores()
     stats = dedup(gold, clean, store)
 
     assert stats.exact_duplicates == 1
@@ -137,16 +129,8 @@ def test_stats_add_up(tmp_path):
     assert stats.to_dict()["rows"] == 6
 
 
-# 본문이 저작권 꼬리 한 줄뿐인 속보 쌍 — 기사의 실제 내용은 제목에 있고 본문만 서로 같다
-SHORT_BODY = "ⓒ 예제뉴스. 무단 전재 및 재배포 금지."
-SHORT_PAIR = [
-    ("breaking_fire", "asiae", "2026-08-20T05:00:00Z", SHORT_BODY),
-    ("breaking_north", "asiae", "2026-08-20T06:00:00Z", SHORT_BODY),
-]
-
-
-def test_short_bodies_are_never_folded(tmp_path):
-    gold, clean, store = build_stores(tmp_path, ARTICLES + SHORT_PAIR)
+def test_short_bodies_are_never_folded(stores):
+    gold, clean, store = stores(ARTICLES + SHORT_PAIR)
     stats = dedup(gold, clean, store)
     df = store.read().set_index("article_id")
 
@@ -157,8 +141,8 @@ def test_short_bodies_are_never_folded(tmp_path):
         assert row.duplicate_count == 1, alias
 
 
-def test_min_fold_len_gate_is_what_prevents_folding(tmp_path):
-    gold, clean, store = build_stores(tmp_path, ARTICLES + SHORT_PAIR)
+def test_min_fold_len_gate_is_what_prevents_folding(stores):
+    gold, clean, store = stores(ARTICLES + SHORT_PAIR)
     stats = dedup(gold, clean, store, DedupConfig(min_fold_len=0))
     df = store.read().set_index("article_id")
 
