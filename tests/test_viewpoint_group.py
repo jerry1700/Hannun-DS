@@ -355,7 +355,7 @@ def test_empty_evidence_reserves_fallback_group():
     assert len(evidence_labels) <= 2
 
 
-def test_same_conclusion_groups_despite_different_reasons():
+def test_same_conclusion_with_different_reasons_forms_different_groups():
     articles = [
         {
             "article_id": "same-1",
@@ -380,7 +380,7 @@ def test_same_conclusion_groups_despite_different_reasons():
         target="청년주택 정책",
     )
 
-    assert result["same-1"] == result["same-2"]
+    assert result["same-1"] != result["same-2"]
 
 
 def test_different_conclusions_form_different_groups():
