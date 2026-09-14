@@ -23,10 +23,10 @@ EMBEDDING_SCHEMA = pa.schema(
 class EmbeddingStore:
     """<root>/embedding/published_date=YYYY-MM-DD/embedding.parquet.
 
-    벡터를 저장해 두는 이유: 군집화는 15분마다, 전체 재구축은 1~6시간마다 도는데
-    그때마다 같은 기사를 다시 인코딩하면 인코딩이 전체 비용을 지배한다. 기사가
-    들어올 때 한 번 계산하고, 군집화는 여기서 읽기만 한다. 파티션 안에서
-    article_id 멱등 — 이미 인코딩된 기사는 pipeline 이 건너뛴다.
+    벡터를 저장해 두는 이유: 배정은 15분마다, 재군집은 매시 도는데 그때마다 같은
+    기사를 다시 인코딩하면 인코딩이 전체 비용을 지배한다. 기사가 들어올 때 한 번
+    계산하고, 군집화는 여기서 읽기만 한다. 파티션 안에서 article_id 멱등 — 이미
+    인코딩된 기사는 pipeline 이 건너뛴다.
     """
 
     def __init__(self, root):

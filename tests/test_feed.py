@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 import pyarrow as pa
+import pytest
 
 from hannun.clustering import RegistryStore
 from hannun.embedding import EmbeddingStore
-from hannun.feed import FeedConfig, SummaryStore, hot_score, summarize
-from hannun.feed.pipeline import majority_category
+from hannun.feed import FeedConfig, SummaryStore, hot_score, majority_category, summarize
 from hannun.ingest import GoldStore
 from hannun.ingest.gold import write_parquet_atomic
 from hannun.quality import QualityStore
@@ -70,24 +70,37 @@ def run(root):
 
 def test_representative_is_centroid_nearest_not_earliest(tmp_path):
     _, df = run(build_stores(tmp_path))
-    row = df.loc[1]
+    assert df.loc[1].representative == "m1"  # 최초 발행(m2)이 아니라 중심 최근접
 
-    assert row.representative == "m1"  # 최초 발행(m2)이 아니라 중심 최근접
+
+def test_first_and_last_published_span_the_members(tmp_path):
+    _, df = run(build_stores(tmp_path))
+    row = df.loc[1]
     assert row.first_published_at == T["m2"] and row.last_published_at == T["m3"]
+
+
+def test_issue_size_and_publishers_are_counted(tmp_path):
+    _, df = run(build_stores(tmp_path))
+    row = df.loc[1]
     assert row.issue_size == 3 and row.publishers == 3
 
 
-def test_issue_id_and_structured_flag(tmp_path):
+def test_issue_id_comes_from_registry(tmp_path):
     stats, df = run(build_stores(tmp_path))
 
-    assert stats.issues == 2 and stats.structured_issues == 1 and stats.with_issue_id == 2
+    assert stats.with_issue_id == 2
     assert df.loc[1].issue_id == 101 and df.loc[0].issue_id == 100
+
+
+def test_structured_flag_follows_quality_table(tmp_path):
+    stats, df = run(build_stores(tmp_path))
+
+    assert stats.issues == 2 and stats.structured_issues == 1
     assert bool(df.loc[0].structured) and not bool(df.loc[1].structured)
 
 
 def test_noise_is_excluded(tmp_path):
     _, df = run(build_stores(tmp_path))
-
     assert len(df) == 2 and -1 not in df.index
 
 
@@ -106,14 +119,18 @@ def test_hot_score_prefers_publisher_diversity():
     assert hot_score(10, 15, 0.0, config) > hot_score(30, 2, 0.0, config)
 
 
-def test_hot_score_decays_with_staleness():
+def test_hot_score_decays_to_one_over_e_after_tau():
     config = FeedConfig(recency_tau_hours=24.0)
     fresh = hot_score(10, 10, 0.0, config)
     day_old = hot_score(10, 10, 24.0, config)
 
     assert day_old < fresh
-    assert abs(day_old / fresh - 0.3679) < 1e-3  # τ시간 경과 = 1/e
-    assert hot_score(10, 10, -5.0, config) == fresh  # 미래 시각은 0으로 클램프
+    assert abs(day_old / fresh - 0.3679) < 1e-3
+
+
+def test_hot_score_clamps_future_time_to_now():
+    config = FeedConfig()
+    assert hot_score(10, 10, -5.0, config) == hot_score(10, 10, 0.0, config)
 
 
 def test_issue_category_is_majority_of_labeled_members(tmp_path):
@@ -123,12 +140,15 @@ def test_issue_category_is_majority_of_labeled_members(tmp_path):
     assert df.loc[0].category == "OTHER"  # 라벨 기사가 없으면 대표 값(OTHER) 유지
 
 
-def test_majority_category_rules():
-    assert majority_category(["정치", "정치", "경제"], "경제") == "정치"
-    assert majority_category(["정치", "경제"], "경제") == "경제"     # 동률에 대표 값이 있으면 대표
-    assert majority_category(["정치", "경제"], "사회") == "정치"     # 동률에 대표 값이 없으면 최다 첫째
-    assert majority_category(["OTHER", None, ""], "사회") == "사회"  # 라벨 없음 → 대표 값
-    assert majority_category(["OTHER", None], None) == "OTHER"
+@pytest.mark.parametrize("categories, fallback, expected", [
+    (["정치", "정치", "경제"], "경제", "정치"),   # 다수결
+    (["정치", "경제"], "경제", "경제"),          # 동률에 대표 값이 있으면 대표
+    (["정치", "경제"], "사회", "정치"),          # 동률에 대표 값이 없으면 최다 첫째
+    (["OTHER", None, ""], "사회", "사회"),       # 라벨 없음 → 대표 값
+    (["OTHER", None], None, "OTHER"),           # 대표 값도 없으면 OTHER
+])
+def test_majority_category_rules(categories, fallback, expected):
+    assert majority_category(categories, fallback) == expected
 
 
 def test_pipeline_writes_hot_score(tmp_path):

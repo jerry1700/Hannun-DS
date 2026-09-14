@@ -42,39 +42,64 @@ def advance_to_w2(issues):
     })
 
 
+def regrow_w1(issues):
+    # 같은 창 재군집: 라벨은 리셋되고(0,1 → 3,4), 기사가 늘고, 새 이슈(6)도 탄생
+    write_window(issues, (D1, D2), {
+        3: [("a1", D1), ("a2", D2), ("a3", D2), ("a4", D2)],
+        4: [("b1", D2), ("b2", D2), ("b3", D2), ("b4", D2)],
+        6: [("h1", D2), ("h2", D2), ("h3", D2)],
+    })
+
+
+def columns_of(registry, window_start, column):
+    table = registry.read_window(window_start).to_pydict()
+    return dict(zip(table["article_id"], table[column]))
+
+
+def succeed_w1_then_w2(tmp_path):
+    issues, registry = build_w1(tmp_path)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+    first_ids = columns_of(registry, D1, "issue_id")
+    advance_to_w2(issues)
+    stats = succeed(issues, registry, start_date=D2, end_date=D3)
+    return stats, first_ids, columns_of(registry, D2, "issue_id"), columns_of(registry, D2, "status")
+
+
 def test_first_window_creates_ids(tmp_path):
     issues, registry = build_w1(tmp_path)
     stats = succeed(issues, registry, start_date=D1, end_date=D2)
+    id_of = columns_of(registry, D1, "issue_id")
 
     assert stats.issues == 2 and stats.created == 2 and stats.inherited == 0
-    table = registry.read_window(D1).to_pydict()
-    id_of = dict(zip(table["article_id"], table["issue_id"]))
     assert id_of["a1"] == id_of["a2"] == id_of["a3"]
     assert id_of["b1"] == id_of["b4"] and id_of["a1"] != id_of["b1"]
 
 
-def test_inheritance_split_and_new(tmp_path):
-    issues, registry = build_w1(tmp_path)
-    succeed(issues, registry, start_date=D1, end_date=D2)
-    w1 = registry.read_window(D1).to_pydict()
-    id_a = dict(zip(w1["article_id"], w1["issue_id"]))["a1"]
-    id_b = dict(zip(w1["article_id"], w1["issue_id"]))["b1"]
+def test_majority_overlap_inherits_previous_id(tmp_path):
+    stats, first_ids, id_of, status_of = succeed_w1_then_w2(tmp_path)
 
-    advance_to_w2(issues)
-    stats = succeed(issues, registry, start_date=D2, end_date=D3)
-    w2 = registry.read_window(D2).to_pydict()
-    id_of = dict(zip(w2["article_id"], w2["issue_id"]))
-    status_of = dict(zip(w2["article_id"], w2["status"]))
+    assert stats.inherited == 2
+    assert id_of["a2"] == first_ids["a1"] and status_of["a2"] == "inherited"
 
-    assert stats.issues == 4 and stats.inherited == 2 and stats.created == 2 and stats.splits == 1
-    assert stats.retired == 0   # 첫 실행은 직전 창 기준 — 이슈 0·1 모두 누군가 이어받았다
-    # 겹침 과반인 군집이 ID 를 승계한다
-    assert id_of["a2"] == id_a and status_of["a2"] == "inherited"
-    # 분열: 이슈 1 을 주장한 두 군집 중 하나만 승계, 다른 하나는 새 ID
+
+def test_split_gives_previous_id_to_one_claimant_only(tmp_path):
+    stats, first_ids, id_of, _ = succeed_w1_then_w2(tmp_path)
+
+    assert stats.splits == 1
     b_ids = {id_of["b1"], id_of["b3"]}
-    assert id_b in b_ids and len(b_ids) == 2
-    # 겹침이 없는 군집은 새 ID
-    assert status_of["c1"] == "new" and id_of["c1"] not in {id_a, id_b}
+    assert first_ids["b1"] in b_ids and len(b_ids) == 2
+
+
+def test_cluster_without_overlap_gets_new_id(tmp_path):
+    stats, first_ids, id_of, status_of = succeed_w1_then_w2(tmp_path)
+
+    assert stats.created == 2
+    assert status_of["c1"] == "new" and id_of["c1"] not in set(first_ids.values())
+
+
+def test_nothing_retires_when_every_previous_issue_is_inherited(tmp_path):
+    stats, _, _, _ = succeed_w1_then_w2(tmp_path)
+    assert stats.retired == 0
 
 
 def test_rerun_is_idempotent(tmp_path):
@@ -94,29 +119,40 @@ def test_rerun_is_idempotent(tmp_path):
 def test_same_window_rerun_with_grown_data_keeps_ids(tmp_path):
     issues, registry = build_w1(tmp_path)
     succeed(issues, registry, start_date=D1, end_date=D2)
-    w1 = registry.read_window(D1).to_pydict()
-    id_of1 = dict(zip(w1["article_id"], w1["issue_id"]))
-    id_a, id_b = id_of1["a1"], id_of1["b1"]
+    first_ids = columns_of(registry, D1, "issue_id")
 
-    # 15분 뒤 같은 창 재군집: 라벨은 리셋되고(0,1 → 3,4), 기사가 늘고, 새 이슈(6)도 탄생
-    write_window(issues, (D1, D2), {
-        3: [("a1", D1), ("a2", D2), ("a3", D2), ("a4", D2)],
-        4: [("b1", D2), ("b2", D2), ("b3", D2), ("b4", D2)],
-        6: [("h1", D2), ("h2", D2), ("h3", D2)],
-    })
+    regrow_w1(issues)
     stats = succeed(issues, registry, start_date=D1, end_date=D2)
-    w = registry.read_window(D1).to_pydict()
-    id_of = dict(zip(w["article_id"], w["issue_id"]))
-    status_of = dict(zip(w["article_id"], w["status"]))
+    id_of = columns_of(registry, D1, "issue_id")
 
-    assert stats.self_window and stats.inherited == 2 and stats.created == 1
-    assert stats.retired == 0   # 두 이슈 모두 이어받았으니 사라진 이슈 없음
-    # 살아 있는 이슈의 서비스 ID 는 라벨 리셋·데이터 증가에도 유지된다
-    assert id_of["a1"] == id_a and id_of["a4"] == id_a and id_of["b1"] == id_b
+    assert stats.self_window and stats.inherited == 2 and stats.created == 1 and stats.retired == 0
+    assert id_of["a1"] == first_ids["a1"] and id_of["a4"] == first_ids["a1"]
+    assert id_of["b1"] == first_ids["b1"]
+
+
+def test_same_window_rerun_keeps_status_lineage(tmp_path):
+    issues, registry = build_w1(tmp_path)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+
+    regrow_w1(issues)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+    status_of = columns_of(registry, D1, "status")
+
     # status 는 직전 창 대비 계보 — 이 창에서 태어난 이슈는 재실행 뒤에도 new
     assert status_of["a1"] == "new" and status_of["h1"] == "new"
+
+
+def test_new_ids_continue_from_global_max(tmp_path):
+    issues, registry = build_w1(tmp_path)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+    first_ids = columns_of(registry, D1, "issue_id")
+
+    regrow_w1(issues)
+    succeed(issues, registry, start_date=D1, end_date=D2)
+    id_of = columns_of(registry, D1, "issue_id")
+
     # 채번은 전 창 최대 다음부터 — 죽은 ID 재사용 없음
-    assert id_of["h1"] > max(id_a, id_b)
+    assert id_of["h1"] > max(first_ids.values())
 
 
 def test_retired_counts_issues_nobody_inherits(tmp_path):

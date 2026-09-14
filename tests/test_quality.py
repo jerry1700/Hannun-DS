@@ -60,13 +60,18 @@ def test_structured_issue_is_flagged_not_deleted(tmp_path):
 def test_close_noise_is_rescued(tmp_path):
     issues, embeddings, store = build_stores(tmp_path)
     stats = qualify(issues, embeddings, store)
-    df = store.read().set_index("article_id")
+    row = store.read().set_index("article_id").loc["n_close"]
 
     assert stats.noise_before == 3 and stats.rescued == 1 and stats.noise_after == 2
-    row = df.loc["n_close"]
     assert row.issue_local == 1 and bool(row.rescued) and row.rescue_sim >= 0.85
-    # 구제 반영 후 이슈 규모가 커진다 — 기존 구성원 행에도 반영
-    assert row.issue_size == 5 and df.loc["real0"].issue_size == 5
+
+
+def test_rescue_updates_issue_size_of_existing_members(tmp_path):
+    issues, embeddings, store = build_stores(tmp_path)
+    qualify(issues, embeddings, store)
+    df = store.read().set_index("article_id")
+
+    assert df.loc["n_close"].issue_size == 5 and df.loc["real0"].issue_size == 5
 
 
 def test_far_noise_stays_noise(tmp_path):

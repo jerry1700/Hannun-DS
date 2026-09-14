@@ -118,7 +118,7 @@ def qualify(issues: IssueStore, embeddings: EmbeddingStore, store: QualityStore,
 
     log.info(
         f"qualify done: rows={stats.rows} issues={stats.issues} "
-        f"structured={stats.structured_issues}({stats.structured_articles}건) "
-        f"noise {stats.noise_before}→{stats.noise_after} (rescued {stats.rescued})"
+        f"structured_issues={stats.structured_issues} structured_articles={stats.structured_articles} "
+        f"noise_before={stats.noise_before} rescued={stats.rescued} noise_after={stats.noise_after}"
     )
     return stats

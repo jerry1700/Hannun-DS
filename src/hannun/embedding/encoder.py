@@ -6,8 +6,7 @@ from dataclasses import dataclass
 
 @dataclass
 class EncoderConfig:
-    # 후보 비교 실험(티켓 11, 2026-09-01)으로 선정. 품질 지표(분리 오버랩 0, 파일럿
-    # ARI 0.877)가 세 후보 동점이라 운영 비용이 갈랐다 — KURE-v1 대비 속도 7~10배, 차원 1/3.
+    # 후보 비교 실험(티켓 11)으로 선정. 품질 지표가 세 후보 동점이라 운영 비용(속도·차원)이 갈랐다
     model_name: str = "dragonkue/multilingual-e5-small-ko-v2"
     # e5 계열은 학습 때 붙인 접두어를 인코딩 때도 붙여야 성능이 나온다
     passage_prefix: str = "passage: "
@@ -18,7 +17,7 @@ class EncoderConfig:
     threads: int = 4
 
 
-def build_input(title, body, body_chars):
+def build_input(title: str, body: str, body_chars: int):
     return f"{title}\n{body[:body_chars]}"
 
 

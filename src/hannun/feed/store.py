@@ -1,4 +1,4 @@
-"""issue_summary 저장소 — 이슈 피드용 창 단위 이슈 요약 (대표 기사·규모·시간 범위)."""
+"""issue_summary 저장소 — 이슈 피드용 창 단위 이슈 요약 (대표 기사·카테고리·규모·시간 범위·화제성)."""
 
 from pathlib import Path
 
@@ -12,19 +12,14 @@ SUMMARY_SCHEMA = pa.schema(
         ("window_start", pa.string()),
         ("window_end", pa.string()),
         ("issue_local", pa.int32()),
-        # 서비스 이슈 ID (issue_registry 승계 결과). 레지스트리가 없으면 -1
         ("issue_id", pa.int64()),
         ("issue_size", pa.int32()),
         ("publishers", pa.int32()),
         ("structured", pa.bool_()),
-        # 이슈 카테고리 — 구성 기사 카테고리(OTHER·빈값 제외)의 다수결, 없으면 대표 기사 값.
-        # 기사 30%만 라벨돼도 이슈 단위 커버리지는 90%대 (S15P21E105-34)
         ("category", pa.string()),
-        # 대표 기사 — 이슈 중심(centroid)에 가장 가까운 기사 (동률이면 최초 발행)
         ("representative", pa.string()),
         ("first_published_at", pa.timestamp("us", tz="UTC")),
         ("last_published_at", pa.timestamp("us", tz="UTC")),
-        # 화제성 — (규모 + 언론사 다양성 가중) × 신선도 감쇠. 피드는 이 내림차순
         ("hot_score", pa.float32()),
         ("summarized_at", pa.timestamp("us", tz="UTC")),
     ]
@@ -32,7 +27,12 @@ SUMMARY_SCHEMA = pa.schema(
 
 
 class SummaryStore:
-    """<root>/issue_summary/window_start=YYYY-MM-DD/issue_summary.parquet."""
+    """<root>/issue_summary/window_start=YYYY-MM-DD/issue_summary.parquet.
+
+    issue_id 는 issue_registry 승계 결과(레지스트리가 없으면 -1), representative 는 이슈
+    중심에 가장 가까운 기사, category 는 구성 기사 카테고리의 다수결(티켓 34), hot_score 는
+    피드 정렬 키(내림차순, 티켓 91)다. 컬럼 정의는 티켓 91 에 있다.
+    """
 
     def __init__(self, root):
         self.root = Path(root)

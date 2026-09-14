@@ -16,9 +16,9 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="현재 창 시작 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--end-date", default=None, help="현재 창 끝 (UTC YYYY-MM-DD, 포함)")
     p.add_argument("--min-shared", type=int, default=SuccessionConfig.min_shared,
-                   help="승계 인정 최소 겹침 기사 수 (기본 2)")
+                   help=f"승계 인정 최소 겹침 기사 수 (기본 {SuccessionConfig.min_shared})")
     p.add_argument("--min-overlap-frac", type=float, default=SuccessionConfig.min_overlap_frac,
-                   help="승계 인정 최소 겹침 비율 (기본 0.5, 과반)")
+                   help=f"승계 인정 최소 겹침 비율 (기본 {SuccessionConfig.min_overlap_frac}, 과반)")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p
 

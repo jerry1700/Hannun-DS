@@ -12,10 +12,8 @@ QUALITY_SCHEMA = pa.schema(
         ("article_id", pa.string()),
         ("publisher_id", pa.string()),
         ("published_date", pa.string()),
-        # 구제가 반영된 최종 번호(-1 은 여전히 노이즈). 원본 배정은 issue 테이블에 남는다
         ("issue_local", pa.int32()),
         ("issue_size", pa.int32()),
-        # 정형(템플릿) 이슈 소속 — 지우지 않고 표시만 한다. 노출 정책은 서비스 몫
         ("structured", pa.bool_()),
         ("rescued", pa.bool_()),
         ("rescue_sim", pa.float32()),
@@ -27,7 +25,12 @@ QUALITY_SCHEMA = pa.schema(
 
 
 class QualityStore:
-    """<root>/issue_quality/published_date=YYYY-MM-DD/issue_quality.parquet."""
+    """<root>/issue_quality/published_date=YYYY-MM-DD/issue_quality.parquet.
+
+    issue_local 은 구제가 반영된 최종 번호(-1 은 여전히 노이즈)고 원본 배정은 issue 테이블에
+    남는다. structured 는 정형(템플릿) 이슈 소속 표시 — 지우지 않고 표시만 하며 노출 정책은
+    서비스 몫이다. 컬럼 정의는 티켓 93 에 있다.
+    """
 
     def __init__(self, root):
         self.root = Path(root)
@@ -40,6 +43,7 @@ class QualityStore:
 
     def read_table(self, start_date: str | None = None, end_date: str | None = None,
                    columns: list[str] | None = None):
+        """published_date 범위(UTC, YYYY-MM-DD, 양끝 포함)의 판정을 pyarrow Table 로."""
         dates = [
             d for d in self.partition_dates()
             if (start_date is None or d >= start_date) and (end_date is None or d <= end_date)

@@ -20,7 +20,8 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--end-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--model", default=EncoderConfig.model_name, help="sentence-transformers 모델 이름")
-    p.add_argument("--batch-size", type=int, default=EncoderConfig.batch_size)
+    p.add_argument("--batch-size", type=int, default=EncoderConfig.batch_size,
+                   help=f"한 번에 인코딩할 기사 수 (기본 {EncoderConfig.batch_size})")
     p.add_argument("--threads", type=int, default=EncoderConfig.threads, help="0 이면 torch 기본값")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p
