@@ -23,6 +23,23 @@ from .store import SummaryStore
 log = logging.getLogger(__name__)
 
 
+def majority_category(categories, fallback):
+    """이슈 카테고리 — 구성 기사 중 OTHER·빈값을 뺀 다수결.
+
+    동률에 대표 기사 값이 끼어 있으면 그것을, 라벨 기사가 하나도 없으면 대표 기사 값을
+    쓴다(그것도 없으면 OTHER). 기사 단위 라벨은 수집 피드에 섹션 정보가 없는 언론사 탓에
+    30% 안팎이지만, 이슈(평균 7건)에 라벨 기사가 하나라도 있으면 채워지므로 이슈 단위
+    커버리지는 훨씬 높다.
+    """
+    fallback = fallback or "OTHER"
+    votes = collections.Counter(c for c in categories if c and c != "OTHER")
+    if not votes:
+        return fallback
+    ranked = votes.most_common()
+    tied = [c for c, n in ranked if n == ranked[0][1]]
+    return fallback if fallback in tied else tied[0]
+
+
 @dataclass
 class SummaryStats:
     window_start: str | None = None
@@ -61,8 +78,11 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
 
     emb = embeddings.read_table(start_date, end_date, columns=["article_id", "vector"])
     vector_of = dict(zip(emb.column("article_id").to_pylist(), emb.column("vector").to_pylist()))
-    g = gold.read_table(start_date, end_date, columns=["article_id", "published_at"])
-    published_of = dict(zip(g.column("article_id").to_pylist(), g.column("published_at").to_pylist()))
+    g = gold.read_table(start_date, end_date,
+                        columns=["article_id", "published_at", "category"])
+    article_ids = g.column("article_id").to_pylist()
+    published_of = dict(zip(article_ids, g.column("published_at").to_pylist()))
+    category_of = dict(zip(article_ids, g.column("category").to_pylist()))
 
     id_of = {}
     reg = registry.read_window(stats.window_start)
@@ -114,6 +134,8 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
             "issue_size": len(ids),
             "publishers": len({r["publisher_id"] for r in rows_of}),
             "structured": structured,
+            "category": majority_category((category_of.get(a) for a in ids),
+                                          category_of.get(representative)),
             "representative": representative,
             "first_published_at": min(known_times.values()) if known_times else None,
             "last_published_at": last,

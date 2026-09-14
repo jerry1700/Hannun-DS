@@ -17,6 +17,9 @@ SUMMARY_SCHEMA = pa.schema(
         ("issue_size", pa.int32()),
         ("publishers", pa.int32()),
         ("structured", pa.bool_()),
+        # 이슈 카테고리 — 구성 기사 카테고리(OTHER·빈값 제외)의 다수결, 없으면 대표 기사 값.
+        # 기사 30%만 라벨돼도 이슈 단위 커버리지는 90%대 (S15P21E105-34)
+        ("category", pa.string()),
         # 대표 기사 — 이슈 중심(centroid)에 가장 가까운 기사 (동률이면 최초 발행)
         ("representative", pa.string()),
         ("first_published_at", pa.timestamp("us", tz="UTC")),
