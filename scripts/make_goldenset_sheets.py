@@ -1,11 +1,11 @@
-"""골드셋 라벨링 시트 생성 — 라벨링 주간에 팀이 채울 CSV 두 종을 만든다.
+"""골드셋 라벨링 시트 생성 — 라벨링 주간에 팀이 채울 CSV 를 만든다 (티켓 104).
 
-① 군집 시트(clusters_<이름>.csv × 라벨러 수): 대표 기사의 **연속 시간대 슬라이스**
-   (무작위 표본은 같은 이슈 짝이 사라져 채점 신호가 약해진다). 표시는 비슷한 기사가
-   이웃하도록 파이프라인 군집 순서로 정렬(번호는 숨김 — 정박 편향 방지).
-   라벨러는 cluster 칸에 이슈 번호(자유 형식)를 적는다 — 파일럿과 같은 방식.
-② 중복 쌍 시트(dedup_pairs.csv): 임베딩 유사도가 높은데 dedup 이 접지 않은 쌍
-   (recall 의 "놓쳤을 법한" 후보) + 문턱 아래 띠의 무작위 표본. O/X 를 적는다.
+군집 시트(clusters_labeler<n>.csv)는 대표 기사의 연속 시간대 슬라이스다 — 무작위 표본은
+같은 이슈 짝이 사라져 채점 신호가 약해진다. 비슷한 기사가 이웃하도록 파이프라인 군집
+순서로 정렬하되 번호는 숨긴다(정박 편향 방지). 라벨러는 cluster 칸에 이슈 번호를 적는다.
+중복 쌍 시트(dedup_pairs.csv)는 임베딩 유사도가 높은데 dedup 이 접지 않은 쌍(recall 의
+"놓쳤을 법한" 후보)과 문턱 아래 띠의 무작위 표본이고, 군집 쌍 시트(issue_pairs.csv)는
+"두 기사가 같은 이슈인가"를 같은이슈:경계:무작위 = 2:1:1 로 섞은 것이다. 둘 다 O/X 를 적는다.
 
 기사 제목이 들어가므로 출력은 local/ 아래로만 — 커밋 금지.
 
@@ -15,6 +15,16 @@
 
 import argparse
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from hannun.dedup import DedupStore
+from hannun.embedding import EmbeddingStore
+from hannun.ingest import GoldStore
+from hannun.preprocess import CleanStore
+from hannun.quality import QualityStore
+from hannun.quality.goldenset import representative_of
 
 SEED = 20260908
 
@@ -37,14 +47,6 @@ def main():
     p.add_argument("--out-dir", default="local/goldenset_sheets")
     args = p.parse_args()
 
-    import numpy as np
-    import pandas as pd
-
-    from hannun.dedup import DedupStore
-    from hannun.embedding import EmbeddingStore
-    from hannun.ingest import GoldStore
-    from hannun.preprocess import CleanStore
-
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(SEED)
@@ -56,21 +58,16 @@ def main():
     clean = CleanStore(args.gold_root).read_table(
         args.date, args.date, columns=["article_id", "content_clean"]
     ).to_pandas().set_index("article_id")
+    quality = QualityStore(args.gold_root).read(args.date, args.date)
+    label_of = dict(zip(quality.article_id, quality.issue_local)) if not quality.empty else {}
 
-    # ① 군집 시트 — 대표 기사 표본. 비슷한 기사끼리 이웃하도록 파이프라인 군집
-    # 순서로 정렬한다(번호 자체는 안 보여줌 — 기계 답을 노출하면 라벨이 그걸 베껴
-    # 채점이 오염된다). 라벨러는 연속 구간에 번호를 채우면 되어 시간이 크게 준다.
-    # 표본은 무작위가 아니라 **연속 시간대 슬라이스** — 무작위 표본은 이슈당 한 조각씩만
-    # 걸려 같은 이슈 짝이 사라진다(채점 신호 약화). 이슈는 시간적으로 몰려 터지므로
-    # (분출 실측) 연속 구간을 통째로 뜨면 이슈 동료가 자연히 함께 들어온다.
+    # 군집 시트 — 표본은 무작위가 아니라 연속 시간대 슬라이스. 이슈는 시간적으로 몰려 터지므로
+    # 연속 구간을 통째로 뜨면 이슈 동료가 자연히 함께 들어온다. 기계 번호를 노출하면 라벨이
+    # 그걸 베껴 채점이 오염되므로 정렬에만 쓴다
     ordered = sorted(emb.article_id, key=lambda a: gold.loc[a].published_at)
     size = min(args.cluster_articles, len(ordered))
     start_at = int(rng.integers(0, len(ordered) - size + 1)) if len(ordered) > size else 0
     sample = ordered[start_at:start_at + size]
-
-    from hannun.quality import QualityStore
-    q = QualityStore(args.gold_root).read(args.date, args.date)
-    label_of = dict(zip(q.article_id, q.issue_local)) if not q.empty else {}
 
     rows = pd.DataFrame({
         "article_id": sample,
@@ -89,14 +86,14 @@ def main():
     for i in range(1, args.labelers + 1):
         rows.to_csv(out_dir / f"clusters_labeler{i}.csv", index=False, encoding="utf-8-sig")
 
-    # ② 중복 쌍 시트 — 대표끼리 유사도 상위인데 접히지 않은 쌍 (recall 후보)
-    ids = list(emb.article_id)   # 쌍 후보는 하루 전체에서 뽑는다 (슬라이스와 무관)
+    # 중복 쌍 시트 — 대표끼리 유사도 상위인데 접히지 않은 쌍 (recall 후보). 쌍 후보는 하루 전체에서
+    ids = list(emb.article_id)
     vectors = np.array(emb.vector.tolist(), dtype="float32")
     sims = vectors @ vectors.T
     np.fill_diagonal(sims, 0.0)
-    dd = DedupStore(args.gold_root).read(args.date, args.date, columns=["article_id", "duplicate_of"])
-    # 결측 duplicate_of 는 pandas 에서 NaN — is None 검사는 뚫린다
-    root_of = {a: (a if pd.isna(r) else r) for a, r in zip(dd.article_id, dd.duplicate_of)}
+    dedup_frame = DedupStore(args.gold_root).read(args.date, args.date,
+                                                  columns=["article_id", "duplicate_of"])
+    root_of = representative_of(dedup_frame)
 
     upper = np.triu_indices_from(sims, k=1)
     values = sims[upper]
@@ -127,10 +124,9 @@ def main():
     })
     sheet.to_csv(out_dir / "dedup_pairs.csv", index=False, encoding="utf-8-sig")
 
-    # ③ 군집 쌍 판정 시트 — "두 기사가 같은 이슈인가 O/X". 시트 방식보다 판단이
-    # 가볍고(쌍당 10초) 분담이 쉬워 본 채점의 기본 방식. 세 층을 섞되 층 정보는
-    # 시트에 넣지 않는다(라벨러가 층을 알면 편향) — 채점기가 파이프라인 상태에서 재유도.
-    structured_issues = set(q[q.structured].issue_local) if not q.empty else set()
+    # 군집 쌍 판정 시트 — 시트 방식보다 판단이 가볍고 분담이 쉬워 본 채점의 기본 방식. 세 층을
+    # 섞되 층 정보는 시트에 넣지 않는다(라벨러가 층을 알면 편향) — 채점기가 파이프라인 상태에서 재유도
+    structured_issues = set(quality[quality.structured].issue_local) if not quality.empty else set()
 
     def eligible(article_id):
         label = label_of.get(article_id, -1)
