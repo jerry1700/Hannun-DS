@@ -105,10 +105,16 @@ docker run --rm -u "$(id -u):$(id -g)" \
 해두므로(118, 2026-09-11 개편) 체인 시작 시점에 입력은 이미 최신이다:
 
 ```
-article_ingest (15분):  수집 → silver → ds_input 내려주기
-ds_daily (04:00):       [trigger] ds_chain → gold_issue_feed
-ds_chain:               hannun_daily_chain (ssh → docker run hannun-ds)   ← DS1 소유
+article_ingest (:00/:15/:30/:45):  수집 → silver → ds_input 내려주기        ← DE
+ds_chain  (매시 :05):              전체 재군집 체인 (ssh → docker run hannun-ds)  ← DS1
+ds_assign (:20/:35/:50):           배정 체인 (같은 이미지, -e MODE=assign)        ← DS1
+ds_daily  (04:00):                 [trigger] ds_chain → gold_issue_feed          ← DE
 ```
+
+주기 설계(102 §8): 15분 전체 재군집은 경계 출렁임(실행당 새 ID 40\~50)이 실측돼
+철회. 매시 재군집이 새 이슈를 만들고, 그 사이 15분 배정이 새 기사를 기존 이슈에
+붙인다(못 붙는 기사는 정시까지 노이즈). 두 DAG 는 같은 flock 을 4분 대기로 나눠
+쓴다. :05/:20 출발은 article_ingest 가 파일을 다 쓴 뒤(:03 경) 읽기 위해서.
 
 트리거 주체 이력: ds_export(내려주기+트리거 통합, ~09-10) → ds_daily 로 분리
 (09-11, ds_export 는 paused 로 잔존). dag_id `ds_chain` 계약 덕에 우리 쪽 변경 0.
