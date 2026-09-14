@@ -38,7 +38,7 @@ class SuccessionStats:
     inherited: int = 0
     created: int = 0
     splits: int = 0
-    retired: int = 0   # 승계원에 있었는데 아무 군집도 이어받지 않은 이슈 — 출렁임 감시용
+    retired: int = 0   # 직전 실행(또는 첫 실행이면 직전 창)에 있었는데 아무 군집도 이어받지 않은 이슈
     articles: int = 0
 
     def to_dict(self):
@@ -109,7 +109,11 @@ def succeed(issues: IssueStore, registry: RegistryStore, config: SuccessionConfi
         entries.sort(reverse=True)
         assigned[entries[0][1]] = prev_issue_id
         stats.splits += len(entries) - 1
-    stats.retired = len(set(prev_id_of.values()) - set(assigned.values()))
+    # 사라진 이슈는 "바로 직전" 대비로 센다 — 자기-승계 실행이면 같은 창의 직전 실행,
+    # 첫 실행이면 직전 창. 둘을 합쳐 세면 창 전진 때 자연 소멸한 어제 이슈가 재실행마다
+    # 반복 집계돼(운영 실측 159) 출렁임 신호가 묻힌다
+    base_ids = set(self_status_of) if stats.self_window else set(prev_id_of.values())
+    stats.retired = len(base_ids - set(assigned.values()))
 
     # 채번은 전 창 통틀어 최대 ID 다음부터 — 자기-승계가 재실행 멱등을 책임지므로,
     # 옛 "현재 창 제외" 방식(재실행에서 죽은 이슈의 ID 가 다른 군집에 재사용될
