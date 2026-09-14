@@ -174,7 +174,9 @@ def export(args) -> None:
             representative_title = text(
                 representative.iloc[0]["title"]
             )
-            category = text(
+            # 이슈 카테고리는 issue_summary 의 구성 기사 다수결(34)을 우선, 그 컬럼이 없는
+            # 옛 창이면 대표 기사 값으로
+            category = text(getattr(issue, "category", None)) or text(
                 representative.iloc[0]["category"]
             )
 

@@ -5,6 +5,7 @@ import pyarrow as pa
 from hannun.clustering import RegistryStore
 from hannun.embedding import EmbeddingStore
 from hannun.feed import FeedConfig, SummaryStore, hot_score, summarize
+from hannun.feed.pipeline import majority_category
 from hannun.ingest import GoldStore
 from hannun.ingest.gold import write_parquet_atomic
 from hannun.quality import QualityStore
@@ -28,6 +29,8 @@ MEMBERS = [
     ("m1", "p1", 1, False), ("m2", "p2", 1, False), ("m3", "p3", 1, False),
     ("s1", "bot", 0, True), ("s2", "bot", 0, True), ("n1", "p4", -1, False),
 ]
+# 이슈 1: 대표 m1 은 라벨이 없지만 m2·m3 이 정치 → 다수결로 정치. 이슈 0: 전부 OTHER
+CATEGORY = {"m1": "OTHER", "m2": "정치", "m3": "정치", "s1": "OTHER", "s2": "OTHER", "n1": "경제"}
 
 
 def build_stores(tmp_path, with_registry=True):
@@ -44,9 +47,11 @@ def build_stores(tmp_path, with_registry=True):
         "vector": VECTORS[a], "dim": 2, "model": "test-model", "encoded_at": qualified_at,
     } for a, pub, _, _ in MEMBERS])
     gold_table = pa.Table.from_pylist(
-        [{"article_id": a, "published_at": T[a]} for a, _, _, _ in MEMBERS],
+        [{"article_id": a, "published_at": T[a], "category": CATEGORY[a]}
+         for a, _, _, _ in MEMBERS],
         schema=pa.schema([("article_id", pa.string()),
-                          ("published_at", pa.timestamp("us", tz="UTC"))]))
+                          ("published_at", pa.timestamp("us", tz="UTC")),
+                          ("category", pa.string())]))
     write_parquet_atomic(gold_table, GoldStore(root).partition_path(D1))
     if with_registry:
         RegistryStore(root).write_window(D1, [{
@@ -109,6 +114,21 @@ def test_hot_score_decays_with_staleness():
     assert day_old < fresh
     assert abs(day_old / fresh - 0.3679) < 1e-3  # τ시간 경과 = 1/e
     assert hot_score(10, 10, -5.0, config) == fresh  # 미래 시각은 0으로 클램프
+
+
+def test_issue_category_is_majority_of_labeled_members(tmp_path):
+    _, df = run(build_stores(tmp_path))
+
+    assert df.loc[1].category == "정치"   # 대표 m1 은 OTHER 지만 구성원 다수결로 채워진다
+    assert df.loc[0].category == "OTHER"  # 라벨 기사가 없으면 대표 값(OTHER) 유지
+
+
+def test_majority_category_rules():
+    assert majority_category(["정치", "정치", "경제"], "경제") == "정치"
+    assert majority_category(["정치", "경제"], "경제") == "경제"     # 동률에 대표 값이 있으면 대표
+    assert majority_category(["정치", "경제"], "사회") == "정치"     # 동률에 대표 값이 없으면 최다 첫째
+    assert majority_category(["OTHER", None, ""], "사회") == "사회"  # 라벨 없음 → 대표 값
+    assert majority_category(["OTHER", None], None) == "OTHER"
 
 
 def test_pipeline_writes_hot_score(tmp_path):
