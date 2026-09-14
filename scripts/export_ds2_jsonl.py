@@ -21,6 +21,35 @@ def text(value) -> str:
     return str(value).strip()
 
 
+def load_previous(target: Path) -> dict:
+    """이전 실행이 남긴 오늘 파일을 clusterId → (원문 줄, 링크 집합, 대표 제목, 카테고리, 빈 요약 여부)
+    로 읽는다. 구성원·대표·카테고리가 그대로인 이슈는 DS2 분석 결과도 같으므로(입력이 같으면
+    출력이 같다) 줄을 재사용한다 — 15분 배정 실행에서 바뀌는 이슈는 수십 개뿐인데 전부 다시
+    분석하던 232초(실행의 60%)를 줄이는 지점 (S15P21E105-123)."""
+    previous = {}
+    if not target.exists():
+        return previous
+    with target.open(encoding="utf-8") as lines:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            links = frozenset(text(a.get("link")) for a in message.get("articles", []))
+            previous[message.get("clusterId")] = (
+                line, links, message.get("factSummary"), message.get("category"),
+                not message.get("commonFactsBriefing"),
+            )
+    return previous
+
+
+def unchanged(entry, links: frozenset, title: str, category: str) -> bool:
+    return entry is not None and entry[1] == links and entry[2] == title and entry[3] == category
+
+
 def export(args) -> None:
     # DS1 산출물 읽기
     quality = QualityStore(args.gold_root).read(
@@ -104,9 +133,12 @@ def export(args) -> None:
             encoding="utf-8",
         )
 
+    previous = load_previous(target) if args.reuse_unchanged else {}
+
     stats = {
         "summary_issues": len(summary),
         "exported_issues": 0,
+        "reused_issues": 0,
         "skipped_no_articles": 0,
         "empty_briefings": 0,
         "articles": 0,
@@ -157,6 +189,18 @@ def export(args) -> None:
                     f"issue_id={issue.issue_id}: "
                     "category 없음"
                 )
+
+            entry = previous.get(int(issue.issue_id))
+            links = frozenset(text(row.url) for row in rows.itertuples(index=False))
+            if unchanged(entry, links, representative_title, category):
+                stats["exported_issues"] += 1
+                stats["reused_issues"] += 1
+                stats["articles"] += len(rows)
+                if entry[4]:
+                    stats["empty_briefings"] += 1
+                if output is not None:
+                    output.write(entry[0] + "\n")
+                continue
 
             # 기존 enrich_issue 입력 형식으로 변환
             issue_data = {
@@ -315,6 +359,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--overwrite",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--reuse-unchanged",
         action="store_true",
     )
 

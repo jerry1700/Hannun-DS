@@ -67,9 +67,13 @@ step quality "$PY" -m hannun.quality.cli -g "$GOLD_ROOT" --start-date "$start" -
 step feed    "$PY" -m hannun.feed.cli    -g "$GOLD_ROOT" --start-date "$start" --end-date "$end"
 
 # DS2 관점 분석 + BE 연동 JSONL 내보내기 (S15P21E105-122) — DE 의 gold_issue_feed 가
-# 이 파일을 이슈 피드에 병합한다. 파일명은 실행일(KST) 하나, 재실행은 원자적 덮어쓰기
+# 이 파일을 이슈 피드에 병합한다. 파일명은 실행일(KST) 하나, 재실행은 원자적 덮어쓰기.
+# 배정 실행은 구성원이 안 바뀐 이슈의 이전 결과를 재사용한다(123 — 232초→수십 초).
+# 재군집 실행은 전량 재분석 — DS2 코드가 바뀌어도 옛 분석이 최대 1시간만 남게
+reuse=()
+[ "$MODE" = "assign" ] && reuse=(--reuse-unchanged)
 mkdir -p "$DS_OUTPUT"
 step export "$PY" scripts/export_ds2_jsonl.py --gold-root "$GOLD_ROOT" \
     --start "$start" --end "$end" --window "$start" \
-    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite
+    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite "${reuse[@]}"
 echo "[chain] done $(date -u +%FT%TZ)"
