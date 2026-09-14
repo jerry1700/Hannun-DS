@@ -5,6 +5,7 @@ from hannun.preprocess import PreprocessConfig, clean_content
 CFG = PreprocessConfig(min_clean_len=10)
 ZWSP = chr(0x200B)  # 원문에 섞여 있는 zero-width space
 BODY = "정부는 오늘 새로운 청년 지원 정책을 발표했다. 이번 정책은 청년 주거 안정과 취업 지원을 핵심으로 한다."
+# 기자 이름·이메일은 전부 가공값 — 규칙이 보는 형태(한글 2~4자 + 직함, 로컬파트@매체 도메인)만 실제와 같다
 
 
 def clean(text, publisher_id=None, config=CFG):
@@ -12,8 +13,8 @@ def clean(text, publisher_id=None, config=CFG):
 
 
 def test_broken_entities_restored():
-    r = clean("법원, 한상혁 amp;#39;면직 집행정지amp;#39; 기각 apos;냉장고apos; 사건 A&amp;B quot;인용quot;")
-    assert r.content_clean == "법원, 한상혁 '면직 집행정지' 기각 '냉장고' 사건 A&B \"인용\""
+    r = clean("법원, 김철수 amp;#39;면직 집행정지amp;#39; 기각 apos;냉장고apos; 사건 A&amp;B quot;인용quot;")
+    assert r.content_clean == "법원, 김철수 '면직 집행정지' 기각 '냉장고' 사건 A&B \"인용\""
     assert "broken_entity" in r.rules_applied
 
 
@@ -55,13 +56,13 @@ def test_copyright_words_inside_the_body_are_kept():
 
 def test_dateline_header_and_suicide_notice_removed():
     notice = "※ 우울감 등 말하기 어려운 고민이 있거나 주변에 이런 어려움을 겪는 가족·지인이 있을 경우 자살 예방 핫라인 1393"
-    r = clean(f"광주=김대우 기자\n{BODY}\n{notice}", "munhwa")
+    r = clean(f"광주=이영희 기자\n{BODY}\n{notice}", "munhwa")
     assert r.content_clean == BODY
     assert {"dateline_header", "suicide_notice"} <= set(r.rules_applied)
 
 
 def test_bracket_wire_header_removed():
-    r = clean(f"[서울=뉴시스] 최지윤 기자 = {BODY}", "fnnews")
+    r = clean(f"[서울=뉴시스] 박민수 기자 = {BODY}", "fnnews")
     assert r.content_clean == BODY
 
 
@@ -71,11 +72,11 @@ def test_agency_source_lines_removed():
 
 
 @pytest.mark.parametrize("signature", [
-    "도쿄/김소연 특파원",
-    "제주 강동삼 기자",
-    "최윤정 온라인 뉴스 기자 mary1701@segye.com",
-    "[박통일 기자]",
-    "[최유나 디지털뉴스 기자 chldbskcjstk@mbn.co.kr]",
+    "도쿄/정수진 특파원",
+    "제주 최지훈 기자",
+    "한소라 온라인 뉴스 기자 news1701@segye.com",
+    "[장미래 기자]",
+    "[조은별 디지털뉴스 기자 digitalnews@mbn.co.kr]",
     "(SBS 디지털뉴스편집부)",
 ])
 def test_signature_variants_removed_at_tail(signature):
@@ -83,11 +84,11 @@ def test_signature_variants_removed_at_tail(signature):
 
 
 @pytest.mark.parametrize("signature", [
-    "동아닷컴 IT전문 정연호 기자(hoho@itdonga.com)",
-    " 조연경 엔터뉴스팀 기자 cho.yeongyeong@jtbc.co.kr (콘텐트비즈니스본부)",
-    " 2kuns@tf.co.kr[연예부 | ssent@tf.co.kr]",
-    " 김민지 기자",
-    " 홍지민 전문기자",
+    "동아닷컴 IT전문 윤서준 기자(tech@itdonga.com)",
+    " 강민아 엔터뉴스팀 기자 kang.mina@jtbc.co.kr (콘텐트비즈니스본부)",
+    " 1press@tf.co.kr[연예부 | ent@tf.co.kr]",
+    " 신동해 기자",
+    " 임하늘 전문기자",
     " [이 기사는 증시분석 전문기자 서경뉴스봇(newsbot@sedaily.com)이 실시간으로 작성했습니다.]",
 ])
 def test_signature_variants_glued_to_last_sentence_removed(signature):
@@ -95,13 +96,13 @@ def test_signature_variants_glued_to_last_sentence_removed(signature):
 
 
 def test_name_without_punctuation_before_it_is_kept():
-    text = "이번 행사를 기획한 사람은 김민지 기자"
+    text = "이번 행사를 기획한 사람은 신동해 기자"
     assert clean(text).content_clean == text
 
 
 @pytest.mark.parametrize("signature", [
-    "[ 이재호 기자 Jay8166@mbn.co.kr ]",
-    "[ 박규원 기자 / pkw712@mbn.co.kr ]",
+    "[ 문지혜 기자 Moon8166@mbn.co.kr ]",
+    "[ 황보람 기자 / hbr712@mbn.co.kr ]",
 ])
 def test_bracket_signature_with_spaces_removed(signature):
     assert clean(f"{BODY}\n\n{signature}", "mbn").content_clean == BODY
@@ -113,13 +114,14 @@ def test_series_intro_line_removed():
 
 
 def test_stacked_tail_lines_all_removed():
-    r = clean(f"{BODY}\njiks79@yna.co.kr\n\n제보는 카카오톡 okjebo\n\n2023/06/23 10:12 송고", "yonhap")
+    r = clean(f"{BODY}\ndesk79@yna.co.kr\n\n제보는 카카오톡 okjebo\n\n2023/06/23 10:12 송고", "yonhap")
     assert r.content_clean == BODY
     assert {"reporter_email_line", "tip_line", "date_stamp_line"} <= set(r.rules_applied)
 
 
 def test_signature_before_copyright_tail_removed():
-    r = clean(f"{BODY}문동성 기자 theMoon@kmib.co.kr\n\t\t\t\n\n\t\t\tGoodNews paper ⓒ , 무단전재 및 수집, 재배포금지", "kmib")
+    r = clean(f"{BODY}곽민정 기자 newsDesk@kmib.co.kr\n\t\t\t\n\n\t\t\t"
+              "GoodNews paper ⓒ , 무단전재 및 수집, 재배포금지", "kmib")
     assert r.content_clean == BODY
     assert {"copyright", "reporter_signature_inline"} <= set(r.rules_applied)
 
@@ -131,76 +133,76 @@ def test_factcheck_notice_removed_for_jtbc_only():
 
 
 def test_reporter_email_on_last_line_removed():
-    r = clean(f"{BODY}\t\t\t\t\n\nstarburyny@news1.kr", "news1")
+    r = clean(f"{BODY}\t\t\t\t\n\nreporter@news1.kr", "news1")
     assert r.content_clean == BODY
 
 
 def test_reporter_signature_glued_to_last_sentence_removed():
-    r = clean(f"{BODY}황재성기자 jsonhng@donga.com", "donga")
+    r = clean(f"{BODY}유진아기자 reporter@donga.com", "donga")
     assert r.content_clean == BODY
     assert "reporter_signature_inline" in r.rules_applied
 
 
 def test_reporter_name_line_removed_only_at_tail():
-    r = clean(f"{BODY}\n곽선미 기자")
+    r = clean(f"{BODY}\n홍길동 기자")
     assert r.content_clean == BODY
-    r2 = clean(f"곽선미 기자\n{BODY}")
-    assert r2.content_clean.startswith("곽선미 기자")
+    r2 = clean(f"홍길동 기자\n{BODY}")
+    assert r2.content_clean.startswith("홍길동 기자")
 
 
 def test_wire_header_removed():
-    r = clean(f"(안성=뉴스1) 배수아 기자 = {BODY}", "fnnews")
+    r = clean(f"(안성=뉴스1) 배지수 기자 = {BODY}", "fnnews")
     assert r.content_clean == BODY
     assert "wire_header" in r.rules_applied
 
 
 def test_broadcast_script_markers_and_signoff_removed():
-    text = ("[앵커] 정부가 청년 정책을 발표했습니다. 김석 기자가 보도합니다. [리포트] 청년 주거 안정이 핵심입니다. "
-            "KBS 뉴스 김석입니다. 촬영기자:김종우/영상편집:여동용/그래픽:김지혜")
+    text = ("[앵커] 정부가 청년 정책을 발표했습니다. 박민수 기자가 보도합니다. [리포트] 청년 주거 안정이 핵심입니다. "
+            "KBS 뉴스 박민수입니다. 촬영기자:김철수/영상편집:이영희/그래픽:정수진")
     r = clean(text, "kbs")
-    assert r.content_clean == "정부가 청년 정책을 발표했습니다. 김석 기자가 보도합니다. 청년 주거 안정이 핵심입니다."
+    assert r.content_clean == "정부가 청년 정책을 발표했습니다. 박민수 기자가 보도합니다. 청년 주거 안정이 핵심입니다."
     assert {"broadcast_marker", "broadcast_signoff", "credits_inline"} <= set(r.rules_applied)
 
 
 def test_mbn_broadcast_tail_block_removed():
-    tail = "\n\nMBN뉴스 배준우입니다.\n[ wook21@mbn.co.kr ]\n\n영상취재 : 배완호 기자\n영상편집 : 이재형"
+    tail = "\n\nMBN뉴스 설민아입니다.\n[ news21@mbn.co.kr ]\n\n영상취재 : 최지훈 기자\n영상편집 : 장미래"
     assert clean(f"{BODY}{tail}", "mbn").content_clean == BODY
 
 
 def test_yonhap_auto_article_notices_removed():
-    tail = ("\nhak@yna.co.kr\n※ 이 기사는 엔씨소프트의 인공지능 기술인 자연어처리기술을 이용해 자동 작성됐습니다."
+    tail = ("\nabc@yna.co.kr\n※ 이 기사는 엔씨소프트의 인공지능 기술인 자연어처리기술을 이용해 자동 작성됐습니다."
             "\n기사의 원 데이터인 기상청 기상예보는 웹사이트에서도 확인할 수 있습니다.\n광고\n기사 문의나 제보는 카카오톡 okjebo")
     assert clean(f"{BODY}{tail}", "yonhap").content_clean == BODY
 
 
 @pytest.mark.parametrize("signature", [
-    "cjg05023@tf.co.kr사진영상기획부",
-    " 세종 강주리 기자",
-    " 윤예림 인턴기자·신진호 기자",
-    " 전주 설정욱·봉화 김상현 기자",
-    " 대만 가오슝시=박수철기자",
-    " 워싱턴 이재연 특파원·서울 박성국 기자",
+    "photo01@tf.co.kr사진영상기획부",
+    " 세종 한소라 기자",
+    " 윤서준 인턴기자·강민아 기자",
+    " 전주 신동해·봉화 임하늘 기자",
+    " 대만 가오슝시=문지혜기자",
+    " 워싱턴 황보람 특파원·서울 곽민정 기자",
     " [ flash@mbn.co.kr ]",
-    ZWSP + "cjg05023@tf.co.kr사진영상기획부",
-    " 김선우 엔터뉴스팀 기자 kim.sunwoo@jtbc.co.kr (콘텐트비즈니스본부) 사진=연합뉴스",
-    " 박상후 엔터뉴스팀 기자 park.sanghoo@jtbc.co.kr(콘텐트비즈니스본부) SM엔터테인먼트 제공",
-    "\n\n유승목 기자 mok@munhwa.com, 사진=마노엔터테인먼트 제공",
-    " <사진=국민권익위원회 제공>darkroom@tf.co.kr사진영상기획부",
-    "\n\n김미경기자 the13ook@dt.co.kr\n\n▶관련기사 17면",
-    "“ 이민종 기자",
-    "\n오세진 기자 5sjin@hani.co.kr, 장예지 기자 penj@hani.co.kr",
-    "\n\nhelpfire@fnnews.com 임우섭 기자",
-    " 박상후 엔터뉴스팀 기자 park.sanghoo@jtbc.co.kr(콘텐트비즈니스본부) 사진=김현우 기자",
-    "\n\n[이연수 디지털뉴스부 인턴기자 dldustn2001@naver.com]]",
-    "\n\n[ 이혁재 기자 yzpotato@mbn.co.kr ]·",
-    "\n콘텐츠 사용과 관련해 궁금한 점이 있으면 전화(☎:02-398-3655) 또는 이메일(qlfflqew@yna.co.kr)로 문의하기 바랍니다.",
+    ZWSP + "photo01@tf.co.kr사진영상기획부",
+    " 유진아 엔터뉴스팀 기자 yoo.jina@jtbc.co.kr (콘텐트비즈니스본부) 사진=연합뉴스",
+    " 배지수 엔터뉴스팀 기자 bae.jisu@jtbc.co.kr(콘텐트비즈니스본부) SM엔터테인먼트 제공",
+    "\n\n설민아 기자 seol@munhwa.com, 사진=마노엔터테인먼트 제공",
+    " <사진=국민권익위원회 제공>photo@tf.co.kr사진영상기획부",
+    "\n\n김철수기자 news13@dt.co.kr\n\n▶관련기사 17면",
+    "“ 이영희 기자",
+    "\n박민수 기자 5news@hani.co.kr, 정수진 기자 desk@hani.co.kr",
+    "\n\nnewsdesk@fnnews.com 최지훈 기자",
+    " 배지수 엔터뉴스팀 기자 bae.jisu@jtbc.co.kr(콘텐트비즈니스본부) 사진=장미래 기자",
+    "\n\n[조은별 디지털뉴스부 인턴기자 intern2001@naver.com]]",
+    "\n\n[ 윤서준 기자 reporter@mbn.co.kr ]·",
+    "\n콘텐츠 사용과 관련해 궁금한 점이 있으면 전화(☎:02-398-3655) 또는 이메일(desk@yna.co.kr)로 문의하기 바랍니다.",
 ])
 def test_more_signature_variants_removed(signature):
     assert clean(f"{BODY}{signature}", "yonhap").content_clean == BODY
 
 
 def test_mbn_anchor_marker_and_desk_signature_removed():
-    r = clean(f"【 앵커멘트 】\n{BODY}\n\n[김누리 디지털뉴스부 인턴기자 nu11iee98@gmail.com]", "mbn")
+    r = clean(f"【 앵커멘트 】\n{BODY}\n\n[강민아 디지털뉴스부 인턴기자 intern98@gmail.com]", "mbn")
     assert r.content_clean == BODY
 
 
@@ -227,7 +229,7 @@ def test_missing_space_after_sentence_end_inserted():
 
 
 def test_whitespace_normalized_but_paragraphs_kept():
-    r = clean("첫 문단이다.  둘째  문장.\n\n\n\n둘째 문단이다.\t끝.")
+    r = clean("첫 문단이다.  둘째  문장.\n\n\n\n둘째 문단이다.\t끝.")
     assert r.content_clean == "첫 문단이다. 둘째 문장.\n\n둘째 문단이다. 끝."
 
 
