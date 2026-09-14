@@ -64,10 +64,13 @@
   표(10·91·93·97), 골드셋 채점 공용 함수를 `quality/goldenset.py` 로(스크립트 5개의
   `sys.path`·로직 복사 제거), 테스트 14건 분리 + `conftest.article_jsonl`(324 → **358**).
   CODE_STYLE 보강 8항목. 상세는 [tickets/S15P21E105-124.md](tickets/S15P21E105-124.md).
+- **124 머지·배포 실측** — 커밋 6개(각각 worktree 단독 pytest 통과) → data/dev 356cb68
+  → EC2 재빌드(의존성 레이어 60초, 코드 레이어 4초). 첫 실행 dedup 139초·`cached 0 /
+  computed 4383`(옛 스키마 캐시 폐기 → 전부 재계산, 예고대로), 두 번째 65초·`4383 / 109`,
+  export 52→42초, 전 단계 rc=0. 배정 실행 전체 2.5분.
 
 ### 다음
-- [ ] 124 커밋 6개 → MR → EC2 재빌드(첫 빌드 전체 재설치) → 첫 실행 `signatures cached=0`
-  정상, 두 번째부터 종전 50초대 확인
+- [x] 124 머지 → EC2 재빌드 → 첫 실행 `signatures cached=0` → 두 번째부터 캐시 적중 확인
 - [ ] 팀: 카테고리 어휘 통일(DE 9개 값 ↔ FE 탭) / DE 에 `issue_summary.category` 소비 제안
 - [ ] 발행 연결 준비: DS2 관점 라벨(120) 일정 확인 → briefing 배열 전환(BE 계약) →
   publish 연결(DE)
