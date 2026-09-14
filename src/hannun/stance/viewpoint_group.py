@@ -73,12 +73,14 @@ PARTICLE_SUFFIXES = (
 
 MAX_SUBCLUSTERS = 3
 MAX_LABEL_CHARS = 60
-SINGLE_GROUP_SIMILARITY_THRESHOLD = 0.75
+SINGLE_GROUP_SIMILARITY_THRESHOLD = 0.55
+REASON_SIMILARITY_THRESHOLD = 0.75
 
 
 # 확정 라벨 가이드:
-# 근거가 달라도 최종 주장이 같으면 같은 세부견해,
-# "폐기"와 "수정"처럼 최종 요구가 다르면 별도 세부견해로 본다.
+# 최종 주장과 핵심 근거가 모두 실질적으로 같아야
+# 같은 세부 견해로 판단한다.
+# 주장 또는 핵심 근거가 다르면 별도 세부 견해로 본다.
 CONCLUSION_ACTION_PATTERNS = (
     ("폐기", r"폐기"),
     ("수정", r"수정"),
@@ -375,6 +377,28 @@ def _embed_texts(
     )
 
 
+def _extract_reason_clause(
+    text: str,
+) -> str:
+    """명시적인 인과 표현 앞의 핵심 근거를 추출한다."""
+
+    claim = _final_claim_sentence(text)
+
+    if not claim:
+        return ""
+
+    match = re.search(
+        r"(.+?)(?:기 때문에|때문에|이므로|라서|해서|"
+        r"로 인해|탓에|까닭에)",
+        claim,
+    )
+
+    if not match:
+        return ""
+
+    return match.group(1).strip(" ,")
+
+
 def _cluster_two_articles(
     texts: list[str],
 ) -> list[list[int]]:
@@ -388,11 +412,31 @@ def _cluster_two_articles(
 
     if (
         similarity
-        >= SINGLE_GROUP_SIMILARITY_THRESHOLD
+        < SINGLE_GROUP_SIMILARITY_THRESHOLD
     ):
-        return [[0, 1]]
+        return [[0], [1]]
 
-    return [[0], [1]]
+    reasons = [
+        _extract_reason_clause(text)
+        for text in texts
+    ]
+
+    if all(reasons):
+        reason_vectors = _embed_texts(reasons)
+
+        reason_similarity = float(
+            cosine_similarity(
+                reason_vectors
+            )[0, 1]
+        )
+
+        if (
+            reason_similarity
+            < REASON_SIMILARITY_THRESHOLD
+        ):
+            return [[0], [1]]
+
+    return [[0, 1]]
 
 
 def _cluster_many_articles(
@@ -520,8 +564,8 @@ def _cluster_with_conclusion_constraints(
     """
     명확히 다른 최종 결론은 E5 유사도가 높아도 분리한다.
 
-    동일한 명시 결론은 근거 차이와 무관하게 같은 그룹으로 두고,
-    결론 동작을 명확히 잡지 못한 기사에는 기존 E5 군집을 사용한다.
+    동일한 결론이라도 핵심 근거가 다르면 분리할 수 있으며,
+    결론 동작을 명확히 잡지 못한 기사에는 E5 군집을 사용한다.
     """
 
     conclusion_keys = [
