@@ -48,8 +48,11 @@ def test_unchanged_requires_same_members_title_and_category(tmp_path):
     assert not export_ds2.unchanged(None, frozenset({"a", "b"}), "제목", "사회")
 
 
-def test_load_previous_skips_missing_file_and_broken_lines(tmp_path):
+def test_load_previous_returns_empty_for_missing_file(tmp_path):
     assert export_ds2.load_previous(tmp_path / "none.jsonl") == {}
+
+
+def test_load_previous_skips_broken_lines(tmp_path):
     target = tmp_path / "day.jsonl"
     target.write_text('{"clusterId": 1, "articles": []}\nnot json\n\n', encoding="utf-8")
     assert set(export_ds2.load_previous(target)) == {1}

@@ -90,7 +90,7 @@ TEMPLATE = """<!doctype html>
   <div class="keyhint">키보드: O / X 키로 판정, ← 로 이전. 진행 상황은 자동 저장됩니다.</div>
 </div>
 <div class="done" id="doneBox" hidden>
-  <p style="margin-bottom:12px">🎉 배정 구간 완료! 아래 버튼으로 CSV 를 받아 제출해 주세요.</p>
+  <p style="margin-bottom:12px">배정 구간 완료. 아래 버튼으로 CSV 를 받아 제출해 주세요.</p>
   <button id="export2">결과 내보내기 (CSV)</button>
   <p class="keyhint">수정하려면 ← 이전 키로 돌아갈 수 있어요.</p>
 </div>
