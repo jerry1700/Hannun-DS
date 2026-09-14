@@ -10,18 +10,24 @@
 프로젝트 루트 `data/ds/` 기준이다.
 
 ```
-src/hannun/<step>/     ingest, dedup, embedding, clustering, quality — 파이프라인 순서대로 패키지 하나씩
+src/hannun/<step>/     ingest, preprocess, dedup, embedding, clustering, quality, feed — 파이프라인 순서대로 패키지 하나씩
+    __init__.py        모듈 docstring 한 줄(이 단계가 무엇을 만드는지) + 공개 이름 re-export
     <일>.py            순수 로직. 파일 하나가 일 하나 (schema, reader, gold …)
     pipeline.py        그 단계의 입력과 출력을 잇는 함수 하나 (ingest, dedup …)
     cli.py             명령이 필요한 단계만. 인자 파싱과 출력 외에 로직을 두지 않는다
-tests/test_<모듈>.py   모듈과 1:1
+tests/test_<모듈>.py   모듈과 1:1. 여러 테스트가 같이 쓰는 입력 생성은 conftest.py 의 fixture 로
 scripts/               한 번 돌리는 것. 패키지를 import 해서 쓰고, 로직을 복사해 오지 않는다
 samples/               커밋한다. gold/ 처럼 코드가 만드는 것은 커밋하지 않는다
 docs/ds1/, docs/ds2/   개인 문서 — WORKLOG, TROUBLESHOOTING, tickets/<Jira 키>.md, 이 파일
 ```
 
 `utils.py`, `helpers.py`, `common.py` 는 만들지 않는다. 갈 곳이 없어 보이는 함수는
-그걸 쓰는 파일에 둔다. 두 단계가 같이 쓰게 되는 날 옮긴다.
+그걸 쓰는 파일에 둔다. 두 단계가 같이 쓰게 되는 날 옮긴다. 스크립트 여럿이 같은 함수를
+쓰게 되면 `sys.path` 로 서로를 import 하지 않고 패키지에 이름 있는 모듈로 옮긴다
+(`quality/goldenset.py` 가 그렇게 생겼다).
+
+스크립트도 import 는 파일 상단에 둔다. `main` 안 import 는 torch·umap 처럼 무거운 선택
+의존성을 그 경로에서만 쓸 때에 한한다.
 
 ## 파일 안 순서
 
@@ -38,11 +44,14 @@ import 는 표준 라이브러리, 서드파티, 우리 패키지 순으로 빈 
 # --- 읽기 ---
 ```
 
-모듈 docstring 첫 줄은 이 파일이 무엇을 하는지 한 문장이다. 명령 파일은
+모듈 docstring 첫 줄은 이 파일이 무엇을 하는지 한 문장이고 한 줄 안에서 끝난다. 더 할
+말은 빈 줄 뒤 문단으로 잇는다. `__init__.py` 도 예외가 아니다 — re-export 만 있어도
+그 패키지가 파이프라인의 어느 단계인지 한 줄을 적는다. 명령 파일은
 `실행이름 — 설명` 으로 시작해 `pyproject` 의 scripts 와 바로 이어지게 한다.
 
 ```python
 """Gold 저장소 — 검증이 끝난 기사를 parquet 으로 쌓고 읽는다."""
+"""STEP 0 — 공통 기사 JSON 을 검증해 Gold 에 적재한다."""
 """hannun-ingest — 공통 기사 JSON 을 검증해 Gold 에 적재하는 명령."""
 ```
 
@@ -66,7 +75,8 @@ dataclass 는 두 용도로만 쓴다. 단계의 결과(`IngestStats`)와 단계
 
 임계값과 파라미터는 코드에 숫자로 박지 않고 설정 dataclass 로 받는다. 골드셋으로
 바꿔가며 돌려야 하는 값이고, 그 값을 왜 골랐는지는 코드가 아니라
-`docs/ds1/tickets/` 에 적는다.
+`docs/ds1/tickets/` 에 적는다. CLI 의 help 에 기본값을 보일 때도 글자로 박지 않고
+설정에서 f-string 으로 가져온다 — 값을 바꾸면 help 가 거짓말을 하기 때문이다.
 
 ```python
 @dataclass
@@ -74,6 +84,9 @@ class DedupConfig:
     lsh_threshold: float = 0.7
     cosine_threshold: float = 0.95
     min_len: int = 300
+
+p.add_argument("--min-cluster-size", type=int, default=ClusterConfig.min_cluster_size,
+               help=f"이슈로 인정할 최소 기사 수 (기본 {ClusterConfig.min_cluster_size})")
 ```
 
 입력을 고치지 않고 새 것을 돌려준다. 원본 컬럼은 지우지 않고 옆에 파생 컬럼을
@@ -97,8 +110,9 @@ def _iter_jsonl(f):
 
 ## docstring
 
-한 줄 요약. 더 할 말이 있으면 빈 줄을 두고 문장으로 이어 쓴다. 불릿, 표, 흐름도는
-넣지 않는다. 그런 건 `docs/ds1/tickets/` 의 몫이다.
+한 줄 요약. 더 할 말이 있으면 빈 줄을 두고 문장으로 이어 쓴다. 불릿, 표, 흐름도,
+`**볼드**` 같은 마크다운은 넣지 않는다 — 렌더되지 않는 자리다. 그런 건
+`docs/ds1/tickets/` 의 몫이다.
 
 인자 설명은 이름만으로 뜻이 안 드러날 때만 쓴다. 대개 단위 문제다 — UTC 인지
 KST 인지, 글자 수인지 토큰 수인지, 문자열인지 date 인지.
@@ -130,6 +144,20 @@ os.replace(tmp, path)
 # 거쳐 쓰면 파티션마다 컬럼 타입이 달라질 수 있어 pyarrow 스키마로 고정한다.
 ```
 
+실측 수치는 주석에 적지 않는다 — 코드는 살고 수치는 늙는다. "정탐률 35.7%", "232초 →
+32초" 같은 숫자는 그 결정을 기록한 티켓 문서에 두고, 주석에는 '왜'와 `(티켓 123)` 같은
+포인터만 남긴다. 티켓은 `티켓 N` 한 가지로 적는다(`S15P21E105-N`, `(N)` 을 섞지 않는다).
+
+```python
+# 나쁨
+# 골드셋 400쌍 스윕에서 15→50 이 정밀도 0.658→0.744 로 개선
+umap_neighbors: int = 50
+
+# 좋음
+# 이웃을 넓게 봐야 같은 이슈의 조각들이 붙는다 — 골드셋 스윕(티켓 104)
+umap_neighbors: int = 50
+```
+
 TODO 는 티켓 번호를 붙인다. 번호가 없는 TODO 는 남기지 않는다.
 
 ```python
@@ -152,16 +180,27 @@ INFO 는 단계가 끝날 때 `written=5 skipped=0` 식의 집계 한 줄, DEBUG
 datetime 은 항상 타임존이 있는 UTC 다. 날짜 문자열은 UTC 기준 `YYYY-MM-DD`.
 KST 로 바꾸는 건 화면에 보여줄 때 BE 가 한다.
 
-난수를 쓰는 함수는 seed 를 인자로 받고 기본값을 고정한다. 결과를 저장할 때는
-어떤 모델, 어떤 파라미터로 만들었는지 같은 파일에 기록한다. 같은 입력이면 같은
-파일이 나와야 하므로 저장 전에 정렬 순서를 고정한다.
+난수를 쓰는 함수는 seed 를 인자로 받고 기본값을 고정한다 — 라이브러리 기본값에 조용히
+기대지 않는다(MinHash 의 seed 가 그랬다). 결과를 저장할 때는 어떤 모델, 어떤 파라미터로
+만들었는지 같은 파일에 기록한다. 같은 입력이면 같은 파일이 나와야 하므로 저장 전에
+정렬 순서를 고정한다.
+
+저장 형식을 바꿀 때: 캐시·중간 산출(`dedup_sig` 같은)은 읽는 쪽이 컬럼 구성이 다른 옛
+파티션을 스스로 버리게 한다 — 잃어도 다시 계산하면 그만이다. 하류가 읽는 테이블(gold,
+dedup, issue …)의 컬럼을 바꾸면 그 단계 티켓 문서의 "산출 컬럼" 표를 같이 고친다.
 
 ## 테스트
 
-pytest. 이름은 `test_<무엇>_<기대>`. 한 테스트는 한 가지 사실만 확인한다.
+pytest. 이름은 `test_<무엇>_<기대>`. 한 테스트는 한 가지 사실만 확인한다 — 한 사실의
+두 면(정제된 본문과 그때 걸린 규칙 이름)은 한 테스트에 두어도 되지만, 배정과 규모
+갱신처럼 따로 깨질 수 있는 것은 나눈다. 같은 규칙의 사례 여럿은 `parametrize`.
+
+테스트 파일이 다른 테스트 파일을 import 하지 않는다. 함께 쓰는 입력 생성은
+`conftest.py` 의 fixture 로 두고(`article_jsonl`), 상수는 그 파일 안에 둔다.
 
 샘플 입력은 손으로 만들지 않고 `scripts/make_sample_data.py` 같은 스크립트로
-생성해 `samples/` 에 둔다. 실제 기사 데이터는 커밋하지 않는다.
+생성해 `samples/` 에 둔다. 실제 기사 데이터는 커밋하지 않는다. 테스트에 들어가는
+기자 이름·이메일은 가공값이어야 한다 — 규칙이 보는 형태만 실제와 같으면 된다.
 
 ## 하지 않는 것
 
@@ -172,13 +211,15 @@ pytest. 이름은 `test_<무엇>_<기대>`. 한 테스트는 한 가지 사실�
 - 코드를 되풀이하는 주석, 컬럼마다 붙은 설명 주석
 - `# ------ 이름` 처럼 길이가 제각각인 구분선
 - `__all__`, 이모지, 구현이 하나뿐인 추상 클래스와 팩토리
-- 있지도 않은 경우를 대비한 방어 코드
+- 있지도 않은 경우를 대비한 방어 코드. 깨진 불변식은 센티널 값으로 적어 두지 않고 예외로 멈춘다
+- 지난 구조를 위해 남겨 둔 분기 — 전환이 끝나면 지운다
+- 이름에 남은 옛 역할("일일 배치")
 
 ## 검사
 
 ```bash
 pytest tests/ -v
-flake8 . --select=E9,F63,F7,F82,E501 --max-line-length=110 --exclude=.venv,build
+flake8 src tests scripts dags --select=E9,F63,F7,F82,E501 --max-line-length=110
 ```
 
 black 같은 자동 정렬 도구는 쓰지 않는다. 한글 주석 정렬이 깨진다.

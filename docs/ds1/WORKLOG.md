@@ -50,9 +50,24 @@
   판정 **완전 동일**(70=70)에 17.5→1.7초, dedup 65→**27초**(서명 5,689 전부 적중, 접힘
   504 동일). 테스트 323 통과. 운영 예상 104→25초 → 배정 실행 \~1.5분.
   상세는 [tickets/S15P21E105-123.md](tickets/S15P21E105-123.md) §5\~7.
+- **123 2단계 배포 실측** — `step dedup` 114(캐시 없음) → **52\~57초**(cached/computed
+  3,636/116). 예상 25초에 못 미침: EC2 코어가 로컬의 절반 속도 + 남는 시간이 LSH
+  인덱스 재구성·containment shingle. MVP 수용(배정 실행 \~2분), LSH 피클은 고도화
+  카드. 123 §7.1.
+- **티켓 124 — 코드 스타일 전면 검수** — MVP 코드가 다 나온 시점에 CODE_STYLE.md 로
+  DS1 파일 전부를 검수, 지적 123건(P0 8·P1·P2)을 전부 수정. 동작이 바뀐 것: 테스트
+  실명·이메일 가공, **MinHash seed 명시 + 서명 캐시 유효 조건 포함**(옛 스키마 파티션은
+  읽는 쪽이 폐기), `chained` 센티널 → 예외, 죽은 코드(`exclude_window`·`existing_ids`·
+  구 입력 구조 분기) 제거, feed None 방어 6곳 제거, Dockerfile 의존성 레이어 분리(코드
+  변경 재빌드 수 초), 체인 셸 export 경로 `$(dirname "$0")`. 규칙 위반: 이름 15곳, 실측
+  수치 주석·help 20여 곳 → 티켓 포인터, 컬럼 주석 → 클래스 docstring + 티켓 산출 컬럼
+  표(10·91·93·97), 골드셋 채점 공용 함수를 `quality/goldenset.py` 로(스크립트 5개의
+  `sys.path`·로직 복사 제거), 테스트 14건 분리 + `conftest.article_jsonl`(324 → **358**).
+  CODE_STYLE 보강 8항목. 상세는 [tickets/S15P21E105-124.md](tickets/S15P21E105-124.md).
 
 ### 다음
-- [ ] 123 2단계 머지 → EC2 재빌드 → 두 번째 실행부터 `step dedup` 20초대 확인
+- [ ] 124 커밋 6개 → MR → EC2 재빌드(첫 빌드 전체 재설치) → 첫 실행 `signatures cached=0`
+  정상, 두 번째부터 종전 50초대 확인
 - [ ] 팀: 카테고리 어휘 통일(DE 9개 값 ↔ FE 탭) / DE 에 `issue_summary.category` 소비 제안
 - [ ] 발행 연결 준비: DS2 관점 라벨(120) 일정 확인 → briefing 배열 전환(BE 계약) →
   publish 연결(DE)
