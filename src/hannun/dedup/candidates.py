@@ -11,7 +11,10 @@ containment 용 MinHashLSHEnsemble 을 처음부터 같이 쓴다.
 
 from dataclasses import dataclass, field
 
+import numpy as np
 from datasketch import MinHash, MinHashLSH, MinHashLSHEnsemble
+
+from .signatures import text_sha1
 
 
 @dataclass
@@ -48,18 +51,60 @@ def build_minhash(shingles: set[str], num_perm: int = 128):
     return m
 
 
+def minhash_scheme() -> str:
+    """이 datasketch 가 새 MinHash 에 쓰는 해시 방식 이름. 서명 캐시의 유효 조건에 들어간다 —
+    라이브러리가 바뀌어 방식이 달라지면 옛 서명은 조용히 틀린 후보를 만들기 때문."""
+    return getattr(MinHash(num_perm=1), "scheme", "legacy")
+
+
+def minhash_from(hashvalues, num_perm: int = 128):
+    """저장된 hashvalues 로 MinHash 를 되살린다 — 순열은 같은 seed 로 다시 만들어지므로 동일하다."""
+    values = np.asarray(hashvalues, dtype=np.uint64)
+    scheme = minhash_scheme()
+    if scheme == "legacy":   # datasketch 1.x 는 scheme 인자가 없다
+        return MinHash(num_perm=num_perm, hashvalues=values)
+    return MinHash(num_perm=num_perm, hashvalues=values, scheme=scheme)
+
+
+def build_entries(rows: list[dict], config: CandidateConfig | None = None,
+                  cached: dict | None = None):
+    """rows(article_id·text)를 LSH 입력 (article_id, MinHash, shingle_count) 로.
+
+    cached 는 article_id → (text_sha1, hashvalues, shingle_count). 정제본 해시가 같으면 서명을
+    다시 계산하지 않는다. 반환: entries, fresh(새로 계산한 것 — 같은 형식, 저장용), skipped_short.
+    """
+    config = config or CandidateConfig()
+    cached = cached or {}
+    entries, fresh, skipped_short = [], {}, 0
+    for row in rows:
+        sha1 = text_sha1(row["text"])
+        hit = cached.get(row["article_id"])
+        if hit is not None and hit[0] == sha1:
+            entries.append((row["article_id"], minhash_from(hit[1], config.num_perm), hit[2]))
+            continue
+        shingles = shingle_set(row["text"], config.shingle_size)
+        if not shingles:
+            skipped_short += 1
+            continue
+        minhash = build_minhash(shingles, config.num_perm)
+        entries.append((row["article_id"], minhash, len(shingles)))
+        fresh[row["article_id"]] = (sha1, minhash.hashvalues, len(shingles))
+    return entries, fresh, skipped_short
+
+
 def find_candidate_pairs(rows: list[dict], config: CandidateConfig | None = None):
     """rows 의 각 항목은 article_id 와 text(정제본)를 가진 딕셔너리다."""
     config = config or CandidateConfig()
-    result = CandidateResult()
+    entries, _, skipped_short = build_entries(rows, config)
+    result = pairs_from_entries(entries, config)
+    result.skipped_short = skipped_short
+    return result
 
-    entries = []
-    for row in rows:
-        shingles = shingle_set(row["text"], config.shingle_size)
-        if not shingles:
-            result.skipped_short += 1
-            continue
-        entries.append((row["article_id"], build_minhash(shingles, config.num_perm), len(shingles)))
+
+def pairs_from_entries(entries: list[tuple], config: CandidateConfig | None = None):
+    """(article_id, MinHash, shingle_count) 목록을 두 LSH 에 넣고 후보 쌍을 뽑는다."""
+    config = config or CandidateConfig()
+    result = CandidateResult()
     if len(entries) < 2:
         return result
 

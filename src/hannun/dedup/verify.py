@@ -11,10 +11,13 @@
 
 from dataclasses import dataclass, field
 
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 from .candidates import shingle_set
+
+# 쌍별 코사인을 한 번에 계산할 덩어리 — 후보 40만 쌍(정형 템플릿 많은 창)에서도 메모리가 튀지 않게
+COSINE_CHUNK = 20_000
 
 
 @dataclass
@@ -42,18 +45,35 @@ def verify_pairs(texts: dict[str, str], pairs: set[tuple[str, str]], config: Ver
         return result
 
     involved = sorted({article_id for pair in pairs for article_id in pair})
-    # 벡터화는 후보에 걸린 기사만. 코사인은 쌍마다 두 벡터 내적이면 되고 전체 행렬이 필요 없다.
+    # 벡터화는 후보에 걸린 기사만. TF-IDF 행은 L2 정규화돼 있어 쌍별 코사인 = 두 행의 내적 —
+    # 쌍마다 함수를 부르지 않고 덩어리로 곱해 한 번에 뽑는다(후보 1.3만 쌍에서 ~30초 → 수 초)
     vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 4))
     matrix = vectorizer.fit_transform(texts[article_id] for article_id in involved)
     row_of = {article_id: i for i, article_id in enumerate(involved)}
 
-    for a, b in sorted(pairs):
-        cosine = cosine_similarity(matrix[row_of[a]], matrix[row_of[b]])[0, 0]
+    ordered = sorted(pairs)
+    cosines = np.empty(len(ordered))
+    for start in range(0, len(ordered), COSINE_CHUNK):
+        chunk = ordered[start:start + COSINE_CHUNK]
+        left = matrix[[row_of[a] for a, _ in chunk]]
+        right = matrix[[row_of[b] for _, b in chunk]]
+        cosines[start:start + len(chunk)] = np.asarray(left.multiply(right).sum(axis=1)).ravel()
+
+    # containment 는 코사인에서 떨어진 쌍만 본다. 기사 하나가 여러 쌍에 걸리므로 4-gram 집합은
+    # 기사당 한 번만 만든다 — 쌍마다 다시 만들면 기각 쌍 1.2만 개에서 2.5만 번 재계산이었다
+    shingles = {}
+
+    def shingles_of(article_id):
+        if article_id not in shingles:
+            shingles[article_id] = shingle_set(texts[article_id], config.shingle_size)
+        return shingles[article_id]
+
+    for (a, b), cosine in zip(ordered, cosines):
         if cosine >= config.cosine_threshold:
             result.confirmed.add((a, b))
             result.method[(a, b)] = "cosine"
             continue
-        if _contained(texts[a], texts[b], config):
+        if _contained(a, b, texts, shingles_of, config):
             result.confirmed.add((a, b))
             result.method[(a, b)] = "containment"
             continue
@@ -61,12 +81,12 @@ def verify_pairs(texts: dict[str, str], pairs: set[tuple[str, str]], config: Ver
     return result
 
 
-def _contained(text_a, text_b, config):
-    short, long = (text_a, text_b) if len(text_a) <= len(text_b) else (text_b, text_a)
-    if len(short) < config.containment_min_len:
+def _contained(a, b, texts, shingles_of, config):
+    short, long = (a, b) if len(texts[a]) <= len(texts[b]) else (b, a)
+    if len(texts[short]) < config.containment_min_len:
         return False
-    short_shingles = shingle_set(short, config.shingle_size)
+    short_shingles = shingles_of(short)
     if not short_shingles:
         return False
-    long_shingles = shingle_set(long, config.shingle_size)
-    return len(short_shingles & long_shingles) / len(short_shingles) >= config.containment_threshold
+    overlap = len(short_shingles & shingles_of(long)) / len(short_shingles)
+    return overlap >= config.containment_threshold
