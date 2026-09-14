@@ -45,7 +45,7 @@ def validate_record(raw: RawRecord):
     if raw.error is not None:
         return None, raw.error
     try:
-        return CommonArticle.model_validate(raw.data), None
+        return CommonArticle.model_validate(raw.record), None
     except ValidationError as exc:
         return None, _format_validation_error(exc)
 
@@ -70,7 +70,7 @@ def ingest(inputs: Iterable[Path | str], store: GoldStore, on_conflict: str = "k
         article, reason = validate_record(raw)
         if article is None:
             stats.rejected += 1
-            rejects.append(Reject(raw.source_ref, reason, raw.data))
+            rejects.append(Reject(raw.source_ref, reason, raw.record))
             log.debug(f"reject {raw.source_ref}: {reason}")
             continue
 
@@ -83,11 +83,11 @@ def ingest(inputs: Iterable[Path | str], store: GoldStore, on_conflict: str = "k
             stats.id_mismatch += 1
         rows_by_id[article.article_id] = row
 
-    result = store.upsert(rows_by_id.values(), on_conflict=on_conflict)
-    stats.written = result.written
-    stats.skipped_existing = result.skipped_existing
-    stats.replaced = result.replaced
-    stats.partitions = result.partitions
+    upserted = store.upsert(rows_by_id.values(), on_conflict=on_conflict)
+    stats.written = upserted.written
+    stats.skipped_existing = upserted.skipped_existing
+    stats.replaced = upserted.replaced
+    stats.partitions = upserted.partitions
 
     rejects_path = store.write_rejects(rejects, run_id)
     stats.rejects_path = str(rejects_path) if rejects_path else None

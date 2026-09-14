@@ -8,8 +8,8 @@ from hannun.ingest.schema import (
 )
 
 
-def base(**overrides) -> dict:
-    d = {
+def base(**overrides):
+    record = {
         "schema_version": "1.0",
         "article_id": expected_article_id("yonhap", "https://www.yna.co.kr/view/1"),
         "publisher_id": "yonhap",
@@ -25,8 +25,31 @@ def base(**overrides) -> dict:
         "language": "ko",
         "published_at": "2026-08-20T05:30:00Z",
     }
-    d.update(overrides)
-    return d
+    record.update(overrides)
+    return record
+
+
+def base_v2(**overrides):
+    """개편된 article_v1(2026-08-31) 필드명 — DE 가 실제로 보내는 모양."""
+    record = {
+        "schema_version": "1.0",
+        "article_id": expected_article_id("yonhap", "https://www.yna.co.kr/view/1"),
+        "publisher_id": "yonhap",
+        "company": "연합뉴스",
+        "source_type": "RSS",
+        "link": "https://www.yna.co.kr/view/1",
+        "title": "제목",
+        "article": "본문",
+        "reporter": "홍길동",
+        "category": "사회",
+        "category_str": "뉴스 > 사회",
+        "thumbnail_url": None,
+        "language": "ko",
+        "published": "2026-08-20T05:30:00Z",
+        "crawled_at": "2026-08-20T05:31:00Z",
+    }
+    record.update(overrides)
+    return record
 
 
 def test_valid_record_parses():
@@ -114,29 +137,6 @@ def test_article_id_matches_after_tracking_param_added():
     tracked = "https://www.yna.co.kr/view/1?utm_source=rss"
     a = CommonArticle.model_validate(base(url=tracked, article_id=plain_id))
     assert article_id_matches(a)
-
-
-def base_v2(**overrides) -> dict:
-    """개편된 article_v1(2026-08-31) 필드명 — DE 가 실제로 보내는 모양."""
-    d = {
-        "schema_version": "1.0",
-        "article_id": expected_article_id("yonhap", "https://www.yna.co.kr/view/1"),
-        "publisher_id": "yonhap",
-        "company": "연합뉴스",
-        "source_type": "RSS",
-        "link": "https://www.yna.co.kr/view/1",
-        "title": "제목",
-        "article": "본문",
-        "reporter": "홍길동",
-        "category": "사회",
-        "category_str": "뉴스 > 사회",
-        "thumbnail_url": None,
-        "language": "ko",
-        "published": "2026-08-20T05:30:00Z",
-        "crawled_at": "2026-08-20T05:31:00Z",
-    }
-    d.update(overrides)
-    return d
 
 
 def test_renamed_fields_map_to_internal_names():

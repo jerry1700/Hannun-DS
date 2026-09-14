@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 from .candidates import shingle_set
 
-# 쌍별 코사인을 한 번에 계산할 덩어리 — 후보 40만 쌍(정형 템플릿 많은 창)에서도 메모리가 튀지 않게
+# 쌍별 코사인을 한 번에 계산할 덩어리. 정형 템플릿이 많은 창은 후보가 수십만 쌍이라 통째로 곱하면 메모리가 튄다
 COSINE_CHUNK = 20_000
 
 
@@ -40,13 +40,13 @@ class VerifyResult:
 def verify_pairs(texts: dict[str, str], pairs: set[tuple[str, str]], config: VerifyConfig | None = None):
     """texts 는 article_id → 정제본. pairs 는 후보 단계가 추린 (id, id) 집합."""
     config = config or VerifyConfig()
-    result = VerifyResult()
+    verified = VerifyResult()
     if not pairs:
-        return result
+        return verified
 
     involved = sorted({article_id for pair in pairs for article_id in pair})
     # 벡터화는 후보에 걸린 기사만. TF-IDF 행은 L2 정규화돼 있어 쌍별 코사인 = 두 행의 내적 —
-    # 쌍마다 함수를 부르지 않고 덩어리로 곱해 한 번에 뽑는다(후보 1.3만 쌍에서 ~30초 → 수 초)
+    # 쌍마다 함수를 부르지 않고 덩어리로 곱해 한 번에 뽑는다(티켓 123)
     vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 4))
     matrix = vectorizer.fit_transform(texts[article_id] for article_id in involved)
     row_of = {article_id: i for i, article_id in enumerate(involved)}
@@ -60,7 +60,7 @@ def verify_pairs(texts: dict[str, str], pairs: set[tuple[str, str]], config: Ver
         cosines[start:start + len(chunk)] = np.asarray(left.multiply(right).sum(axis=1)).ravel()
 
     # containment 는 코사인에서 떨어진 쌍만 본다. 기사 하나가 여러 쌍에 걸리므로 4-gram 집합은
-    # 기사당 한 번만 만든다 — 쌍마다 다시 만들면 기각 쌍 1.2만 개에서 2.5만 번 재계산이었다
+    # 기사당 한 번만 만든다 — 쌍마다 다시 만들면 기사 수의 몇 배를 재계산한다(티켓 123)
     shingles = {}
 
     def shingles_of(article_id):
@@ -70,15 +70,15 @@ def verify_pairs(texts: dict[str, str], pairs: set[tuple[str, str]], config: Ver
 
     for (a, b), cosine in zip(ordered, cosines):
         if cosine >= config.cosine_threshold:
-            result.confirmed.add((a, b))
-            result.method[(a, b)] = "cosine"
+            verified.confirmed.add((a, b))
+            verified.method[(a, b)] = "cosine"
             continue
         if _contained(a, b, texts, shingles_of, config):
-            result.confirmed.add((a, b))
-            result.method[(a, b)] = "containment"
+            verified.confirmed.add((a, b))
+            verified.method[(a, b)] = "containment"
             continue
-        result.rejected += 1
-    return result
+        verified.rejected += 1
+    return verified
 
 
 def _contained(a, b, texts, shingles_of, config):

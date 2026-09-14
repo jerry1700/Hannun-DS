@@ -18,7 +18,7 @@ def build_parser():
     p.add_argument("--start-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--end-date", default=None, help="UTC YYYY-MM-DD, 포함")
     p.add_argument("--min-clean-len", type=int, default=PreprocessConfig.min_clean_len,
-                   help="이보다 짧으면 short 로 표시 (기본 100)")
+                   help=f"이보다 짧으면 short 로 표시 (기본 {PreprocessConfig.min_clean_len})")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v: INFO, -vv: DEBUG")
     return p
 

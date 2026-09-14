@@ -79,9 +79,9 @@ class GoldStore:
         안 된다. 재크롤링을 반영할 때만 replace 를 명시한다.
         """
         if on_conflict not in ("keep", "replace"):
-            raise ValueError(f"on_conflict 는 keep 또는 replace: {on_conflict}")
+            raise ValueError(f"on_conflict must be keep or replace: {on_conflict}")
 
-        result = UpsertResult()
+        upserted = UpsertResult()
         by_date = defaultdict(list)
         for r in rows:
             by_date[r["published_date"]].append(r)
@@ -98,29 +98,29 @@ class GoldStore:
                 if on_conflict == "keep":
                     existing_set = set(existing_ids)
                     mask = [i not in existing_set for i in new_ids]
-                    result.skipped_existing += mask.count(False)
-                    result.written += mask.count(True)
+                    upserted.skipped_existing += mask.count(False)
+                    upserted.written += mask.count(True)
                     new_table = new_table.filter(pa.array(mask, pa.bool_()))
                     combined = pa.concat_tables([existing, new_table])
                 else:
                     new_set = set(new_ids)
                     keep_mask = [i not in new_set for i in existing_ids]
                     replaced = keep_mask.count(False)
-                    result.replaced += replaced
-                    result.written += len(new_ids) - replaced
+                    upserted.replaced += replaced
+                    upserted.written += len(new_ids) - replaced
                     existing = existing.filter(pa.array(keep_mask, pa.bool_()))
                     combined = pa.concat_tables([existing, new_table])
             else:
                 combined = new_table
-                result.written += new_table.num_rows
+                upserted.written += new_table.num_rows
 
             # 순서를 고정해 두면 같은 입력에서 같은 파일이 나온다. 재현·diff 용.
             combined = combined.sort_by([("published_at", "ascending"), ("article_id", "ascending")])
-            self._atomic_write(combined, path)
-            result.partitions.append(date_str)
-            log.info(f"partition {date_str} → {combined.num_rows} rows")
+            write_parquet_atomic(combined, path)
+            upserted.partitions.append(date_str)
+            log.debug(f"partition {date_str} → {combined.num_rows} rows")
 
-        return result
+        return upserted
 
     def write_rejects(self, rejects: list[Reject], run_id: str):
         if not rejects:
@@ -150,9 +150,6 @@ class GoldStore:
              columns: list[str] | None = None):
         return self.read_table(start_date, end_date, columns).to_pandas()
 
-    def existing_ids(self):
-        return set(self.read_table(columns=["article_id"]).column("article_id").to_pylist())
-
     def partition_path(self, published_date: str):
         return self.articles_dir / f"published_date={published_date}" / "articles.parquet"
 
@@ -165,11 +162,8 @@ class GoldStore:
                 dates.append(d.name.split("=", 1)[1])
         return sorted(dates)
 
-    def _atomic_write(self, table, path):
-        write_parquet_atomic(table, path)
 
-
-def write_parquet_atomic(table, path):
+def write_parquet_atomic(table: pa.Table, path: Path):
     """임시 파일에 쓰고 교체한다. 쓰다가 죽어도 기존 파티션은 남는다. os.replace 는 Windows 에서도 원자적이다."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from hannun.ingest.gold import GoldStore
 from hannun.preprocess.store import CleanStore
 
-from .candidates import CandidateConfig, build_entries, minhash_scheme, pairs_from_entries
+from .candidates import CandidateConfig, build_entries, pairs_from_entries
 from .exact import find_exact_duplicates
 from .groups import GroupConfig, build_groups
 from .signatures import SignatureStore
@@ -20,8 +20,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class DedupConfig:
     # 정제본이 이보다 짧으면 접지 않는다. 본문이 저작권 꼬리뿐인 속보·포토·영상 기사는
-    # 실제 내용이 제목에 있는데 본문이 같다는 이유로 서로 접혀 사라진다 — 5,105건 실측에서
-    # 나온 오탐 전부가 이 유형이었다. 100 은 크롤러 발행 기준·정제 short 기준과 같은 값이다.
+    # 실제 내용이 제목에 있는데 본문이 같다는 이유로 서로 접혀 사라진다. 값의 근거는 티켓 10.
     min_fold_len: int = 100
     candidates: CandidateConfig = field(default_factory=CandidateConfig)
     verify: VerifyConfig = field(default_factory=VerifyConfig)
@@ -63,8 +62,8 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
     정제본이 없는 기사는 원문으로 대신한다. 정제본이 min_fold_len 미만인 기사는
     판정 자체에서 제외해 단독으로 남긴다.
 
-    signatures 를 주면 MinHash 서명을 실행 간 재사용한다(123) — 결과는 캐시 없이 돌린 것과
-    같고 시간만 준다. 창 전체를 매번 다시 판정하는 것은 그대로다: 인덱스·검증은 새 기사와
+    signatures 를 주면 MinHash 서명을 실행 간 재사용한다(티켓 123) — 결과는 캐시 없이 돌린
+    것과 같고 시간만 준다. 창 전체를 매번 다시 판정하는 것은 그대로다: 인덱스·검증은 새 기사와
     옛 기사의 쌍을 봐야 하므로.
     """
     config = config or DedupConfig()
@@ -92,10 +91,8 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
 
     survivors = [row for row in foldable if row["article_id"] not in exact.duplicate_of]
     cached = {}
-    scheme = minhash_scheme()
     if signatures is not None:
-        cached = signatures.read_cache(dates[0], dates[-1], config.candidates.shingle_size,
-                                       config.candidates.num_perm, scheme)
+        cached = signatures.read_cache(dates[0], dates[-1], config.candidates)
     entries, fresh, skipped_short = build_entries(
         [{"article_id": row["article_id"], "text": row["text"]} for row in survivors],
         config.candidates, cached,
@@ -108,8 +105,7 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
         for article_id, signature in fresh.items():
             by_date.setdefault(date_of[article_id], {})[article_id] = signature
         for date_str, rows_of in by_date.items():
-            signatures.merge_partition(date_str, rows_of, config.candidates.shingle_size,
-                                       config.candidates.num_perm, scheme)
+            signatures.merge_partition(date_str, rows_of, config.candidates)
     candidates = pairs_from_entries(entries, config.candidates)
     stats.candidate_pairs = len(candidates.pairs)
     stats.skipped_short = skipped_short
@@ -193,9 +189,10 @@ def _merge(rows, exact, near, pair_method):
     for article_id, representative in near.duplicate_of.items():
         final_of[article_id] = representative
         pair = (article_id, representative) if article_id < representative else (representative, article_id)
-        # 별 그룹핑이라 접힌 기사는 항상 대표와 직접 확정된 쌍이 있다. "chained" 는
-        # 그 전제가 깨졌을 때를 위한 방어값 — 실데이터에 나타나면 버그다.
-        method[article_id] = pair_method.get(pair, "chained")
+        # 별 그룹핑이라 접힌 기사는 항상 대표와 직접 확정된 쌍이 있다. 없으면 그룹핑 코드가 잘못된 것이다.
+        if pair not in pair_method:
+            raise RuntimeError(f"folded article has no verified pair with its representative: {pair}")
+        method[article_id] = pair_method[pair]
     for article_id, representative in exact.duplicate_of.items():
         final_of[article_id] = near.duplicate_of.get(representative, representative)
         method[article_id] = "sha256"

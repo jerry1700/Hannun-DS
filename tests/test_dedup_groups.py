@@ -8,7 +8,7 @@ def order_of(*ids):
 
 def test_chained_article_is_not_folded():
     # a~b, b~c 연쇄에서 c 는 대표 a 와 직접 확정된 적이 없다 — 접지 않는다.
-    # 실측 검수에서 이런 접힘의 정탐률이 35.7% 뿐이었다 (직접 검증된 접힘은 89~96%)
+    # 실측 검수에서 이런 접힘은 대부분 다른 기사였다(티켓 10 §4.5)
     result = build_groups({("a", "b"), ("b", "c")}, order_of("a", "b", "c"))
 
     assert result.groups == 1

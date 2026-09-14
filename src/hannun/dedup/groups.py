@@ -1,8 +1,8 @@
 """확정 쌍을 별(star) 그룹으로 묶고 대표를 정한다.
 
-접히는 기사는 반드시 대표와 **직접 확정된 쌍**이어야 한다. 처음에는 연쇄(A~B~C)도
-한 그룹으로 접었지만, 2023 실측 표본 280쌍 전수 검수에서 연쇄로만 이어진 접힘의
-정탐률이 35.7%(직접 검증된 접힘은 89~96%)로 나와 연쇄 전파를 없앴다 — 대표의
+접히는 기사는 반드시 대표와 직접 확정된 쌍이어야 한다. 처음에는 연쇄(A~B~C)도
+한 그룹으로 접었지만, 실측 표본 전수 검수(티켓 10 §4.5)에서 연쇄로만 이어진 접힘의
+정탐률이 직접 검증된 접힘의 절반에도 못 미쳐 연쇄 전파를 없앴다 — 대표의
 직접 이웃만 접고, 나머지는 자기들끼리 다시 별을 만든다.
 
 지우는 것은 없다. 중복 기사에는 duplicate_of(대표 article_id)를, 대표에는
@@ -32,7 +32,7 @@ def build_groups(pairs: set[tuple[str, str]], order: dict[str, tuple], config: G
     정렬 키는 호출자가 만든다 — 파이프라인은 (published_at, -content_len, article_id) 를 쓴다.
     """
     config = config or GroupConfig()
-    result = DuplicateGroups()
+    grouped = DuplicateGroups()
 
     neighbors = collections.defaultdict(set)
     for a, b in pairs:
@@ -40,16 +40,16 @@ def build_groups(pairs: set[tuple[str, str]], order: dict[str, tuple], config: G
         neighbors[b].add(a)
 
     for component in _components(neighbors):
-        for group in _star_groups(component, neighbors, order, config.max_group_size, result):
+        for group in _star_groups(component, neighbors, order, config.max_group_size, grouped):
             if len(group) < 2:
                 continue
             representative = min(group, key=lambda article_id: order[article_id])
-            result.groups += 1
-            result.duplicate_count[representative] = len(group)
+            grouped.groups += 1
+            grouped.duplicate_count[representative] = len(group)
             for article_id in group:
                 if article_id != representative:
-                    result.duplicate_of[article_id] = representative
-    return result
+                    grouped.duplicate_of[article_id] = representative
+    return grouped
 
 
 def _components(neighbors):
@@ -69,16 +69,16 @@ def _components(neighbors):
         yield component
 
 
-def _star_groups(component, neighbors, order, cap, result):
+def _star_groups(component, neighbors, order, cap, grouped):
     """대표 + 대표와 직접 확정된 쌍만 한 그룹으로. 나머지는 자기들끼리 다시 별을 만든다.
 
-    연쇄로만 이어진 기사는 대표와 직접 비교된 적이 없다 — 검수에서 그런 접힘의
-    3건 중 2건이 다른 기사였다. 상한은 직접 이웃이 폭주할 때의 안전판으로만 남는다.
+    연쇄로만 이어진 기사는 대표와 직접 비교된 적이 없다 — 검수에서 그런 접힘은 셋 중
+    둘이 다른 기사였다(티켓 10 §4.5). 상한은 직접 이웃이 폭주할 때의 안전판으로만 남는다.
     """
     representative = min(component, key=lambda article_id: order[article_id])
     star = [representative] + sorted(neighbors[representative] & set(component))
     if len(star) > cap:
-        result.split_oversized += 1
+        grouped.split_oversized += 1
     yield star[:cap]
 
     rest = set(component) - set(star[:cap])
@@ -86,4 +86,4 @@ def _star_groups(component, neighbors, order, cap, result):
         return
     rest_neighbors = {node: neighbors[node] & rest for node in rest}
     for sub in _components(rest_neighbors):
-        yield from _star_groups(sub, rest_neighbors, order, cap, result)
+        yield from _star_groups(sub, rest_neighbors, order, cap, grouped)
