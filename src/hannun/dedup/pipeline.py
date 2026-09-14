@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from hannun.ingest.gold import GoldStore
 from hannun.preprocess.store import CleanStore
 
-from .candidates import CandidateConfig, find_candidate_pairs
+from .candidates import CandidateConfig, build_entries, minhash_scheme, pairs_from_entries
 from .exact import find_exact_duplicates
 from .groups import GroupConfig, build_groups
+from .signatures import SignatureStore
 from .store import DedupStore
 from .verify import VerifyConfig, verify_pairs
 
@@ -37,6 +38,9 @@ class DedupStats:
     exact_duplicates: int = 0
     candidate_pairs: int = 0
     skipped_short: int = 0
+    # 서명 캐시 적중/신규 계산 — 15분 실행에서 신규가 그 사이 들어온 기사 수와 같아야 정상
+    signatures_cached: int = 0
+    signatures_computed: int = 0
     confirmed_pairs: int = 0
     rejected_pairs: int = 0
     near_groups: int = 0
@@ -50,13 +54,18 @@ class DedupStats:
 
 
 def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupConfig | None = None,
-          start_date: str | None = None, end_date: str | None = None):
+          start_date: str | None = None, end_date: str | None = None,
+          signatures: SignatureStore | None = None):
     """날짜 범위(UTC, 양끝 포함)의 기사 전체를 한 번에 놓고 중복을 판정한다.
 
     범위가 곧 창이다 — 쪼개서 두 번 돌리면 경계를 넘는 쌍(자정 직전·직후 기사)을 놓치므로
     항상 창 하나를 통째로 돌린다. 완전 중복은 원문으로, 근사 중복은 정제본으로 보고
     정제본이 없는 기사는 원문으로 대신한다. 정제본이 min_fold_len 미만인 기사는
     판정 자체에서 제외해 단독으로 남긴다.
+
+    signatures 를 주면 MinHash 서명을 실행 간 재사용한다(123) — 결과는 캐시 없이 돌린 것과
+    같고 시간만 준다. 창 전체를 매번 다시 판정하는 것은 그대로다: 인덱스·검증은 새 기사와
+    옛 기사의 쌍을 봐야 하므로.
     """
     config = config or DedupConfig()
     stats = DedupStats()
@@ -82,12 +91,28 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
     stats.exact_duplicates = len(exact.duplicate_of)
 
     survivors = [row for row in foldable if row["article_id"] not in exact.duplicate_of]
-    candidates = find_candidate_pairs(
+    cached = {}
+    scheme = minhash_scheme()
+    if signatures is not None:
+        cached = signatures.read_cache(dates[0], dates[-1], config.candidates.shingle_size,
+                                       config.candidates.num_perm, scheme)
+    entries, fresh, skipped_short = build_entries(
         [{"article_id": row["article_id"], "text": row["text"]} for row in survivors],
-        config.candidates,
+        config.candidates, cached,
     )
+    stats.signatures_computed = len(fresh)
+    stats.signatures_cached = len(entries) - len(fresh)
+    if signatures is not None and fresh:
+        date_of = {row["article_id"]: row["published_date"] for row in survivors}
+        by_date = {}
+        for article_id, signature in fresh.items():
+            by_date.setdefault(date_of[article_id], {})[article_id] = signature
+        for date_str, rows_of in by_date.items():
+            signatures.merge_partition(date_str, rows_of, config.candidates.shingle_size,
+                                       config.candidates.num_perm, scheme)
+    candidates = pairs_from_entries(entries, config.candidates)
     stats.candidate_pairs = len(candidates.pairs)
-    stats.skipped_short = candidates.skipped_short
+    stats.skipped_short = skipped_short
 
     texts = {row["article_id"]: row["text"] for row in survivors}
     verified = verify_pairs(texts, candidates.pairs, config.verify)
@@ -127,7 +152,8 @@ def dedup(gold: GoldStore, clean: CleanStore, store: DedupStore, config: DedupCo
     log.info(
         f"dedup done: rows={stats.rows} exact={stats.exact_duplicates} candidates={stats.candidate_pairs} "
         f"confirmed={stats.confirmed_pairs} groups={stats.exact_groups + stats.near_groups} "
-        f"duplicates={stats.duplicates}"
+        f"duplicates={stats.duplicates} signatures(cached/computed)="
+        f"{stats.signatures_cached}/{stats.signatures_computed}"
     )
     return stats
 

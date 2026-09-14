@@ -9,6 +9,7 @@ from hannun.ingest.gold import GoldStore
 from hannun.preprocess.store import CleanStore
 
 from .pipeline import DedupConfig, dedup
+from .signatures import SignatureStore
 from .store import DedupStore
 
 
@@ -28,7 +29,8 @@ def main(argv: list[str] | None = None):
 
     root = args.gold_root
     stats = dedup(GoldStore(root), CleanStore(root), DedupStore(root), DedupConfig(),
-                  start_date=args.start_date, end_date=args.end_date)
+                  start_date=args.start_date, end_date=args.end_date,
+                  signatures=SignatureStore(root))
     print(json.dumps(stats.to_dict(), ensure_ascii=False, indent=2))
     return 0 if stats.rows > 0 else 1
 
