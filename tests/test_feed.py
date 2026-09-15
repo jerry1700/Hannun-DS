@@ -5,7 +5,8 @@ import pytest
 
 from hannun.clustering import RegistryStore
 from hannun.embedding import EmbeddingStore
-from hannun.feed import FeedConfig, SummaryStore, hot_score, majority_category, summarize
+from hannun.feed import (CATEGORIES, FeedConfig, SummaryStore, hot_score, majority_category,
+                         normalize_category, summarize)
 from hannun.ingest import GoldStore
 from hannun.ingest.gold import write_parquet_atomic
 from hannun.quality import QualityStore
@@ -146,9 +147,26 @@ def test_issue_category_is_majority_of_labeled_members(tmp_path):
     (["정치", "경제"], "사회", "정치"),          # 동률에 대표 값이 없으면 최다 첫째
     (["OTHER", None, ""], "사회", "사회"),       # 라벨 없음 → 대표 값
     (["OTHER", None], None, "OTHER"),           # 대표 값도 없으면 OTHER
+    (["산업", "경제", "사회"], "사회", "경제"),   # 별칭은 합쳐서 센다 — 산업+경제 2표
+    (["IT과학"], "산업", "IT/과학"),            # 대표 값도 어휘로 맞춘다
 ])
 def test_majority_category_rules(categories, fallback, expected):
     assert majority_category(categories, fallback) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("산업", "경제"), ("IT과학", "IT/과학"), ("정치", "정치"), ("", "OTHER"), (None, "OTHER"),
+])
+def test_normalize_category_maps_to_team_vocabulary(raw, expected):
+    assert normalize_category(raw) == expected
+
+
+def test_normalize_category_passes_unknown_label_through():
+    assert normalize_category("최신기사") == "최신기사"
+
+
+def test_aliases_map_into_the_vocabulary():
+    assert normalize_category("산업") in CATEGORIES and normalize_category("IT과학") in CATEGORIES
 
 
 def test_pipeline_writes_hot_score(tmp_path):

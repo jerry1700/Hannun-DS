@@ -17,6 +17,7 @@ from hannun.embedding.store import EmbeddingStore
 from hannun.ingest.gold import GoldStore
 from hannun.quality.store import QualityStore
 
+from .category import majority_category
 from .scoring import FeedConfig, hot_score
 from .store import SummaryStore
 
@@ -129,20 +130,3 @@ def summarize(quality: QualityStore, embeddings: EmbeddingStore, registry: Regis
         f"structured={stats.structured_issues} with_issue_id={stats.with_issue_id}"
     )
     return stats
-
-
-def majority_category(categories, fallback: str | None):
-    """이슈 카테고리 — 구성 기사 중 OTHER·빈값을 뺀 다수결.
-
-    동률에 대표 기사 값이 끼어 있으면 그것을, 라벨 기사가 하나도 없으면 대표 기사 값을
-    쓴다(그것도 없으면 OTHER). 기사 단위 라벨은 수집 피드에 섹션 정보가 없는 언론사 탓에
-    드물지만, 이슈에 라벨 기사가 하나라도 있으면 채워지므로 이슈 단위 커버리지는 훨씬
-    높다(티켓 34).
-    """
-    fallback = fallback or "OTHER"
-    votes = collections.Counter(c for c in categories if c and c != "OTHER")
-    if not votes:
-        return fallback
-    ranked = votes.most_common()
-    tied = [c for c, n in ranked if n == ranked[0][1]]
-    return fallback if fallback in tied else tied[0]
