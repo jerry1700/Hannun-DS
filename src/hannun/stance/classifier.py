@@ -70,6 +70,28 @@ BLOCKING_TERMS = (
     "부결",
 )
 
+# Target 식별용으로 쓰기에는 너무 범용적인 표현.
+# 이런 단어 하나만 겹친다고 같은 이슈 문장으로 보지 않는다.
+TARGET_GENERIC_TERMS = {
+    *ACTION_KEYWORDS,
+    *BLOCKING_TERMS,
+    "검토",
+    "논의",
+    "방안",
+    "가능성",
+    "문제",
+    "필요",
+    "요구",
+    "촉구",
+    "찬성",
+    "비판",
+    "우려",
+    "지지",
+    "최악",
+    "물러나라",
+}
+
+
 STANCE_SIGNAL_PATTERN = re.compile(
     r"찬성(?:한다고|한다|했다|하며|하고| 입장)|"
     r"지지(?:한다고|한다|했다|하며|하고| 입장)|"
@@ -77,7 +99,7 @@ STANCE_SIGNAL_PATTERN = re.compile(
     r"긍정적|바람직하|필요하|정당하|타당하|"
     r"반대|우려|비판|규탄|반발|저지|폐기|철회|중단|취소|"
     r"거부|재의요구|부결|촉구|요구|건의|투쟁|"
-    r"악법|폭거|최악|물러나라|무책임|선동|어깃장|외면|"
+    r"악법|폭거|최악|물러나라|사퇴|퇴진|무책임|선동|몽니|어깃장|외면|"
     r"실망스(?:럽|러)|참담|수치스럽|진일보|이정표|진전"
 )
 
@@ -87,6 +109,7 @@ POSITIVE_PATTERNS = (
     r"환영(?:한다고|한다|했다|하며)",
     r"긍정적(?:이라고|으로)\s*(?:평가|전망)",
     r"(?:정당|타당|바람직|필요)하(?:다고|다|며)",
+    r"(?:논의|검토)(?:하자|하자는|해야|할\\s*필요)",
     r"경의(?:를)?\s*표",
     r"(?:재표결|재투표).{0,20}(?:추진|촉구|요구)",
     r"공포(?:해\s*달라|를\s*(?:촉구|요구)|해야)",
@@ -127,6 +150,11 @@ NEGATIVE_PATTERNS = (
     r"폭거",
     r"최악",
     r"물러나라",
+    r"사퇴",
+    r"퇴진",
+    r"몽니",
+    r"사퇴(?:하라|해야|를\\s*(?:촉구|요구))",
+    r"퇴진(?:하라|해야|을\\s*(?:촉구|요구))",
     r"터무니없는\s*거짓",
     r"실망스(?:럽|러)",
     r"불안하",
@@ -181,14 +209,30 @@ def _extract_terms(text: str) -> list[str]:
 
 
 def _is_target_related(target: str, content: str) -> bool:
-    """문장에 Target과 겹치는 단서가 있는지 확인한다."""
+    """Target의 이슈 식별 단서가 실제로 겹치는지 확인한다."""
 
     target_terms = _extract_terms(target)
     content_terms = _extract_terms(content)
 
+    if not target_terms or not content_terms:
+        return False
+
+    anchor_terms = [
+        term
+        for term in target_terms
+        if term not in TARGET_GENERIC_TERMS
+    ]
+
+    terms_to_match = (
+        anchor_terms
+        if anchor_terms
+        else target_terms
+    )
+
     return any(
-        target_term in content_term or content_term in target_term
-        for target_term in target_terms
+        target_term in content_term
+        or content_term in target_term
+        for target_term in terms_to_match
         for content_term in content_terms
     )
 
@@ -333,7 +377,7 @@ def _blocking_action_direction(
 
     criticism = (
         r"규탄|비판|비난|반발|부당|문제|무책임|선동|"
-        r"어깃장|외면|왜곡|무모|도전|반대"
+        r"어깃장|몽니|외면|왜곡|무모|도전|반대"
     )
 
     approval = (
@@ -389,7 +433,20 @@ def _target_action_direction(
         r"부당|문제|우려|비판|규탄|반발"
     )
 
-    for action in _target_actions(target):
+    target_actions = _target_actions(target)
+
+    if any(
+        action in {"검토", "논의"}
+        for action in target_actions
+    ):
+        if re.search(
+            r"(?:검토|논의).{0,20}"
+            r"(?:해야|하자|하자는|필요하|바람직하)",
+            sentence,
+        ):
+            return "positive"
+
+    for action in target_actions:
         escaped = re.escape(action)
 
         # "제정을 요구", "시행을 촉구"처럼

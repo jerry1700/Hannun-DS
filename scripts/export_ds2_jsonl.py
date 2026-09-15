@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from hannun.clustering.registry import RegistryStore
 from hannun.enrichment.pipeline import enrich_issue
 from hannun.feed.store import SummaryStore
 from hannun.ingest.gold import GoldStore
@@ -59,6 +60,11 @@ def export(args) -> None:
     summary = SummaryStore(args.gold_root).read(
         args.window,
     )
+    registry = RegistryStore(
+        args.gold_root
+    ).read_window(
+        args.window,
+    ).to_pandas()
     gold = GoldStore(args.gold_root).read(
         args.start,
         args.end,
@@ -87,6 +93,16 @@ def export(args) -> None:
     ][
         ["article_id", "issue_local"]
     ]
+
+    quality = quality[
+        ["article_id"]
+    ].merge(
+        registry[
+            ["article_id", "issue_id"]
+        ],
+        on="article_id",
+        how="inner",
+    )
 
     articles = (
         quality
@@ -149,8 +165,8 @@ def export(args) -> None:
     try:
         for issue in summary.itertuples(index=False):
             rows = articles[
-                articles["issue_local"]
-                == issue.issue_local
+                articles["issue_id"]
+                == issue.issue_id
             ].sort_values(
                 "published_at",
                 kind="stable",
@@ -241,6 +257,13 @@ def export(args) -> None:
                 in enriched["articles"]
             }
 
+            viewpoint_by_id = {
+                str(article["article_id"]):
+                    article["viewpoint_group_label"]
+                for article
+                in enriched["articles"]
+            }
+
             briefing = " ".join(
                 text(sentence)
                 for sentence
@@ -275,9 +298,10 @@ def export(args) -> None:
                 "articles": [
                     {
                         "link": text(row.url),
-                        # #120 구현 전까지 null
                         "viewpointGroupLabel":
-                            None,
+                            viewpoint_by_id[
+                                str(row.article_id)
+                            ],
                         "stance":
                             stance_by_id[
                                 str(row.article_id)
