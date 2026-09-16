@@ -10,7 +10,9 @@ QualityConfig.assign_min_sim 이상이면 그 이슈에 붙이고, 못 붙는 �
 쪼개졌다 붙었다 했다(티켓 102 주말 실측). 배정은 기존 이슈를 건드리지 않아 그 출렁임이
 없다 — 대신 새 이슈 탄생은 정시까지 최대 1시간 기다린다.
 
-ds_chain 과 같은 flock 을 쓴다. 재군집이 길어져 겹치면 4분까지 기다렸다 양보한다.
+ds_chain 과 같은 flock 을 쓴다. 재군집이 길어져 겹치면 10분까지 기다렸다 이어 돈다 —
+재군집이 16분 안팎이라 :20 배정은 보통 1~2분 기다린다(티켓 102 §8.3). 4분이던 시절엔
+재군집이 조금만 늘어도 :20 이 잠금을 못 잡고 실패했다.
 """
 
 from datetime import datetime, timedelta
@@ -39,7 +41,7 @@ with DAG(
             "ssh -i /opt/airflow/.ssh/hannun.pem"
             " -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
             " ubuntu@host.docker.internal"
-            " 'set -o pipefail; flock -w 240 /tmp/hannun_chain.lock"
+            " 'set -o pipefail; flock -w 600 /tmp/hannun_chain.lock"
             " docker run --rm -u 1000:1000 -e MODE=assign"
             " -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input"
             " -v $HOME/ds_output:/data/ds_output"
