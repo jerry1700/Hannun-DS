@@ -38,7 +38,7 @@ with DAG(
         task_id="hannun_daily_chain",
         # 다음 정시 실행이 자연 재시도다 — 별도 재시도는 잠금 경합 소음만 만든다.
         # 타임아웃은 걸린 실행이 뒤 실행들을 오래 막지 않게 30분. flock 은 ds_assign
-        # 과 같은 잠금을 쓰고 4분까지 기다린다(배정이 끝나기를 기다렸다 이어 돎).
+        # 과 같은 잠금을 쓰고 10분까지 기다린다(배정이 끝나기를 기다렸다 이어 돎).
         # 명령은 ds_assign_dag.py 와 MODE 만 다르다 — 고칠 때 둘을 같이 고친다
         retries=0,
         execution_timeout=timedelta(minutes=30),
@@ -46,7 +46,7 @@ with DAG(
             "ssh -i /opt/airflow/.ssh/hannun.pem"
             " -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
             " ubuntu@host.docker.internal"
-            " 'set -o pipefail; flock -w 240 /tmp/hannun_chain.lock"
+            " 'set -o pipefail; flock -w 600 /tmp/hannun_chain.lock"
             " docker run --rm -u 1000:1000"
             " -v $HOME/gold:/data/gold -v $HOME/ds_input:/data/ds_input"
             " -v $HOME/ds_output:/data/ds_output"
