@@ -264,12 +264,14 @@ def export(args) -> None:
                 in enriched["articles"]
             }
 
-            briefing = " ".join(
+            # BE 는 commonFactsBriefing 을 List<String> 으로 받는다. generate_fact_summary
+            # 가 공통 사실 문장을 리스트로 주므로 합치지 않고 그대로 넘긴다 (S15P21E105-69)
+            briefing = [
                 text(sentence)
                 for sentence
                 in enriched["fact_summary"]
                 if text(sentence)
-            )
+            ]
 
             clustered_at = pd.Timestamp(
                 issue.summarized_at
