@@ -55,13 +55,19 @@ def test_known_viewpoints_are_grouped_and_labeled():
     )
 
     assert result["neg-1"] == result["neg-2"]
-    assert "절차적 정당성" in result["neg-1"]
+    assert "정당성" in result["neg-1"]
+    assert "부족" in result["neg-1"]
 
     assert result["neg-3"] != result["neg-1"]
-    assert "사법부 독립" in result["neg-3"]
+    assert "독립" in result["neg-3"]
+    assert "훼손" in result["neg-3"]
 
     assert result["pos-1"] == result["pos-2"]
-    assert "정당하다" in result["pos-1"]
+    assert "정당" in result["pos-1"]
+
+    for label in result.values():
+        assert label is not None
+        assert len(label) <= 8
 
 
 def test_subclusters_do_not_exceed_three():
@@ -409,3 +415,101 @@ def test_different_conclusions_form_different_groups():
     )
 
     assert result["discard"] != result["revise"]
+
+def test_short_label_preserves_opinion_direction_regressions():
+    from hannun.stance.viewpoint_group import _short_viewpoint_label
+
+    cases = [
+        (
+            "건강보험료율 동결에 우려를 표하는 입장이다.",
+            "2027년 건강보험료율 동결",
+            "동결 우려",
+        ),
+        (
+            "용 후보자의 자진 사퇴에 선을 긋는 상황이다.",
+            "김승원 용혜인 인사청문회",
+            "사퇴 거부",
+        ),
+        (
+            "정부의 건강보험료율 동결을 규탄했다.",
+            "2027년 건강보험료율 동결",
+            "동결 규탄",
+        ),
+        (
+            "야권은 후보자 지명 철회를 요구했다.",
+            "후보자 인사청문회",
+            "철회 요구",
+        ),
+    ]
+
+    for text, target, expected in cases:
+        actual = _short_viewpoint_label(
+            text,
+            target=target,
+        )
+
+        assert actual == expected, (
+            f"{text!r}: expected={expected!r}, "
+            f"actual={actual!r}"
+        )
+
+        assert len(actual) <= 8
+
+def test_different_directional_claims_are_not_forced_into_same_viewpoint_group():
+    from hannun.stance.viewpoint_group import generate_viewpoint_group_labels
+
+    articles = [
+        {
+            "article_id": "article-concern",
+            "stance": "negative",
+            "content": "대한의사협회는 건강보험료 동결에 우려를 표하는 입장이다.",
+        },
+        {
+            "article_id": "article-condemn",
+            "stance": "negative",
+            "content": "보건의료계 노조는 정부의 건강보험료 동결을 규탄했다.",
+        },
+    ]
+
+    labels = generate_viewpoint_group_labels(
+        articles,
+        target="2027년 건강보험료율 동결",
+    )
+
+    assert labels["article-concern"] == "동결 우려"
+    assert labels["article-condemn"] == "동결 규탄"
+    assert labels["article-concern"] != labels["article-condemn"]
+
+def test_short_label_preserves_explicit_positive_direction():
+    from hannun.stance.viewpoint_group import _short_viewpoint_label
+
+    cases = [
+        (
+            "올해 다시 한번 KLPGA 정규투어를 개최하게 되어 기쁘고 영광스럽게 생각한다.",
+            "KLPGA 오픈 개최",
+            "개최 환영",
+        ),
+        (
+            "이번 대회의 성공을 기대한다.",
+            "KLPGA 오픈 개최",
+            "성공 기대",
+        ),
+        (
+            "한국 골프 발전과 골프 대중화에 지속적으로 기여하겠다.",
+            "KLPGA 오픈 개최",
+            "발전 기여",
+        ),
+    ]
+
+    for text, target, expected in cases:
+        actual = _short_viewpoint_label(
+            text,
+            target=target,
+        )
+
+        assert actual == expected, (
+            f"{text!r}: expected={expected!r}, "
+            f"actual={actual!r}"
+        )
+
+        assert len(actual) <= 8

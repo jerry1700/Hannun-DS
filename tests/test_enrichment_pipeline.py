@@ -272,7 +272,7 @@ def test_viewpoint_group_label_is_connected_to_article(monkeypatch):
         captured["target"] = target
 
         return {
-            "article-1": "대법원장 제청 절차의 논의 부족",
+            "article-1": "논의 부족",
         }
 
     monkeypatch.setattr(
@@ -317,5 +317,5 @@ def test_viewpoint_group_label_is_connected_to_article(monkeypatch):
 
     assert (
         result["articles"][0]["viewpoint_group_label"]
-        == "대법원장 제청 절차의 논의 부족"
+        == "논의 부족"
     )

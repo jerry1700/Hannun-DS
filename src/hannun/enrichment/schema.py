@@ -106,10 +106,10 @@ def validate_ds2_output(result: dict[str, Any]) -> None:
                 "must be non-empty str"
             )
 
-        if len(label) > 200:
+        if len(label) > 8:
             raise ValueError(
                 f"DS2 article[{index}].viewpoint_group_label "
-                "must be 200 characters or fewer"
+                "must be 8 characters or fewer"
             )
 
         confidence = article["stance_confidence"]

@@ -94,10 +94,10 @@ def test_null_viewpoint_group_label_raises_error(issues):
         validate_ds2_output(result)
 
 
-def test_viewpoint_group_label_over_200_chars_raises_error(issues):
+def test_viewpoint_group_label_over_8_chars_raises_error(issues):
     result = enrich_dummy(issues[0])
 
-    result["articles"][0]["viewpoint_group_label"] = "가" * 201
+    result["articles"][0]["viewpoint_group_label"] = "가" * 9
 
     with pytest.raises(
         ValueError,
