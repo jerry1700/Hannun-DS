@@ -48,6 +48,33 @@ def test_unchanged_requires_same_members_title_and_category(tmp_path):
     assert not export_ds2.unchanged(None, frozenset({"a", "b"}), "제목", "사회")
 
 
+BODY = ("정부는 오늘 새로운 청년 지원 정책을 발표했다. 이번 정책은 청년 주거 안정과 취업 지원을 핵심으로 한다. "
+        "야당은 재원 대책이 빠졌다며 국회 심의 과정에서 따져 보겠다고 밝혔다. ")
+
+
+def issue_data(issue_id, n_articles):
+    return {
+        "issue_cluster_id": str(issue_id),
+        "representative_title": f"이슈 {issue_id} 대표 제목",
+        "articles": [{"article_id": f"{issue_id}-{i}", "title": f"기사 {i}", "content": BODY + f"추가 문장 {i}.",
+                      "publisher_name": f"p{i}"} for i in range(n_articles)],
+    }
+
+
+def test_analyze_issues_parallel_matches_sequential_in_order():
+    issues = [issue_data(i, 2 + i % 3) for i in range(5)]
+    sequential = export_ds2.analyze_issues(issues, workers=1)
+    parallel = export_ds2.analyze_issues(issues, workers=2)
+
+    assert [e["issue_cluster_id"] for e in parallel] == [str(i) for i in range(5)]
+    assert parallel == sequential
+
+
+def test_analyze_issues_single_issue_stays_sequential():
+    assert export_ds2.analyze_issues([issue_data(9, 2)], workers=3)[0]["issue_cluster_id"] == "9"
+    assert export_ds2.analyze_issues([], workers=3) == []
+
+
 def test_load_previous_returns_empty_for_missing_file(tmp_path):
     assert export_ds2.load_previous(tmp_path / "none.jsonl") == {}
 

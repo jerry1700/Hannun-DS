@@ -66,10 +66,13 @@ step feed    "$PY" -m hannun.feed.cli    -g "$GOLD_ROOT" --start-date "$start" -
 # DS2 관점 분석 + BE 연동 JSONL 내보내기 (S15P21E105-122) — DE 의 gold_issue_feed 가
 # 이 파일을 이슈 피드에 병합한다. 파일명은 실행일(KST) 하나, 재실행은 원자적 덮어쓰기.
 # 구성원·대표 제목·카테고리가 안 바뀐 이슈는 두 모드 모두 이전 결과를 재사용한다(티켓 123).
-# 재군집의 전량 재분석은 이슈가 늘자 :20 배정을 밀어냈다(티켓 102 §8.2). 하루 첫 실행은
-# 그날 파일이 없어 자연히 전량 재분석이라 DS2 코드 변경은 다음 날 자정에 반영된다
+# 재군집은 UMAP 을 다시 그려 3분의 2가 바뀌므로 재사용이 적고, 관점 라벨(120)이 붙은 뒤 이슈당
+# 분석이 3배 무거워져 이슈 단위로 3개 프로세스에 나눈다(4 vCPU 중 하나는 남긴다 — 티켓 123 §8).
+# 하루 첫 실행은 그날 파일이 없어 자연히 전량 재분석이라 DS2 코드 변경은 다음 날 자정에 반영된다
+EXPORT_WORKERS="${EXPORT_WORKERS:-3}"
 mkdir -p "$DS_OUTPUT"
 step export "$PY" "$SCRIPTS/export_ds2_jsonl.py" --gold-root "$GOLD_ROOT" \
     --start "$start" --end "$end" --window "$start" \
-    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite --reuse-unchanged
+    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite --reuse-unchanged \
+    --workers "$EXPORT_WORKERS"
 echo "[chain] done $(date -u +%FT%TZ)"
