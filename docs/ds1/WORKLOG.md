@@ -12,10 +12,22 @@
   로컬 3.2배가 EC2 에선 1.8배 — 4 vCPU = 물리 코어 2개라 프로세스 3개가 코어 2개를 나눠 쓴다.
   :20 배정 대기 해소, DE :27 피드가 그 시간 재군집 결과를 받는다. 123 §8.5.
 - data/dev: DE 69 gold 이슈 피드 발행을 DAG 에 붙임 — 발행 연결 완료 단계.
+- **티켓 128 UMAP 고정 지도 — 설계 시뮬레이션과 구현** — 로컬 1/1\~1/2 창 7,853건을 3시간
+  간격 7단계로 넣어 실제 cluster·succeed 로 비교. (A) 매 단계 재학습 created/retired/splits
+  130/96/67(운영 재현). (B) 지도 고정+transform 32/16/13 이지만 지도 학습 뒤 터진 이슈를 못
+  잡아 (A) 이슈의 23%를 잃고 노이즈 16→25%. (C) 따뜻한 재학습(init=이전 좌표)은 효과 없음.
+  (D) 고정 지도 + 노이즈를 384차원 코사인 평균 연결(0.70)로 새 이슈 탐지 → **51/17/16, 잃는
+  이슈 15%, 노이즈 19%** 로 결정. 구현: `clustering/umap_map.py` MapStore(창별 reducer.pkl +
+  기사별 좌표 표 + 설정 meta), `attach_new_issues`, `cluster(map_store=…)`, cli
+  `--refit-map/--no-map`, `issue_centroids` 류를 `clustering/centroids.py` 로(quality 가 import).
+  실제 구현으로 재실행(`scripts/simulate_recluster_churn.py`): refit 140/99/74 vs fixed
+  **47/19/12**, 이슈 717 vs 660, 구제 뒤 노이즈 16% vs 19%. 테스트 +11(396). 상세는
+  [tickets/S15P21E105-128.md](tickets/S15P21E105-128.md).
 
 ### 다음
+- [ ] 128: EC2 골드셋(9/7\~8, 400쌍)으로 refit vs fixed 채점 → `new_issue_sim` 확정 → 머지·배포 → 하루 관찰
 - [ ] DS2 에 123 §8.4 프로파일 전달 — 공통 사실 추출 문장 수 캡·행렬 연산이 다음 배수
-- [ ] 재사용 키에 분석 코드 버전(sidecar) / UMAP 고정 지도 착수 여부
+- [ ] 재사용 키에 분석 코드 버전(sidecar)
 - [ ] DE 수집 매핑 어휘 8개 · FE 탭 8개 · BE briefing 배열 수신 확인
 
 ---

@@ -53,18 +53,21 @@ Asia/Seoul (2026-09-10 확인). crontab 시각은 서버 TZ 기준이므로 등�
 ## 4. 운영 순서와 산출물
 
 ```
-ingest → preprocess → dedup → embed → cluster → succeed → quality → feed
-gold/articles → clean → dedup → embedding → issue → issue_registry → issue_quality → issue_summary
+ingest → preprocess → dedup → embed → cluster(또는 assign) → succeed → quality → feed → export
+gold/articles → clean → dedup(+dedup_sig) → embedding → issue(+umap_map) → issue_registry → issue_quality
+  → issue_summary → ~/ds_output/<KST 날짜>.jsonl
 ```
 
 BE 소비 지점: `issue_summary/`(피드: issue_id·대표 기사·hot_score) +
-`issue_registry/`(기사→issue_id) + `issue_quality/`(기사 단위 최종 배정).
+`issue_registry/`(기사→issue_id) + `issue_quality/`(기사 단위 최종 배정). DE 는 `ds_output/`
+을 병합해 발행한다. `dedup_sig/`(서명 캐시, 티켓 123)와 `umap_map/`(창별 고정 지도, 티켓 128)은
+중간 산출이라 하류가 읽지 않는다 — 지우면 다음 실행이 다시 만든다.
 
-## 5. 아직 안 붙인 것
+## 5. 코드 갱신 반영
 
-- **15분 배정 루프**(`hannun-assign`): ds_input 이 일 단위라 보류.
-  DE 가 15분 단위 내려주기를 제공하면 ingest→preprocess→embed→assign→quality 로 붙인다
-- 코드 갱신 반영: `git pull` 후 `./.venv/bin/pip install -e ".[embedding,clustering]"`
+- 컨테이너 운영(§6)이라 `git pull && docker build -t hannun-ds .` — 코드만 바뀌면 수 초
+- 고정 지도를 지금 벡터로 다시 학습해야 하면 `hannun-cluster --refit-map`, 옛 방식(매번 재학습)으로
+  돌려 보려면 `--no-map`. 둘 다 실험용이고 체인은 기본값을 쓴다
   재실행 (pyproject 의 콘솔 스크립트가 바뀌었을 수 있음 — TS-011)
 
 ## 6. 도커 전환 (승계 실전 검증 후)

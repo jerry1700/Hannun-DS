@@ -1,8 +1,6 @@
-"""품질 규칙 — 정형(템플릿) 이슈 판별과 노이즈 구제. STEP 4 의 판단 기준."""
+"""품질 규칙 — 정형(템플릿) 이슈 판별과 노이즈 구제 문턱. STEP 4 의 판단 기준."""
 
 from dataclasses import dataclass
-
-import numpy as np
 
 
 @dataclass
@@ -24,39 +22,3 @@ def structured_issue_ids(meta: dict, config: QualityConfig):
         issue_id for issue_id, (size, publishers) in meta.items()
         if publishers <= config.structured_max_publishers and size >= config.structured_min_size
     }
-
-
-def issue_centroids(vectors_by_issue: dict):
-    """이슈별 중심 벡터(정규화 평균)를 (행렬, 번호 리스트) 로. vectors_by_issue 는 issue_local → 벡터 목록."""
-    ids, rows = [], []
-    for issue_id, vectors in vectors_by_issue.items():
-        mean = np.mean(np.asarray(vectors, dtype="float32"), axis=0)
-        norm = np.linalg.norm(mean)
-        if norm == 0:
-            continue
-        ids.append(issue_id)
-        rows.append(mean / norm)
-    if not rows:
-        return np.empty((0, 0), dtype="float32"), []
-    return np.stack(rows), ids
-
-
-def nearest_issue_assignments(vectors: dict, centroid_matrix, centroid_ids: list, min_sim: float):
-    """벡터를 가장 가까운 이슈 중심에 붙인다. 문턱 미달은 제외.
-
-    구제(티켓 93)와 증분 배정(티켓 102)이 같은 기계를 쓴다. vectors 는 article_id → 벡터,
-    결과는 article_id → (issue_local, 유사도).
-    """
-    if not len(centroid_ids) or not vectors:
-        return {}
-    placements = {}
-    for article_id, vector in vectors.items():
-        v = np.asarray(vector, dtype="float32")
-        norm = np.linalg.norm(v)
-        if norm == 0:
-            continue
-        sims = centroid_matrix @ (v / norm)
-        best = int(np.argmax(sims))
-        if sims[best] >= min_sim:
-            placements[article_id] = (centroid_ids[best], float(sims[best]))
-    return placements

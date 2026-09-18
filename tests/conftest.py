@@ -8,6 +8,16 @@ from hannun.ingest.schema import expected_article_id
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "articles_sample.jsonl"
 
 
+class FakeReducer:
+    """umap 대신 쓰는 지도 — 학습 점은 앞 두 성분 그대로, transform 점은 100 을 더해 구별한다. pickle 되어야 한다."""
+
+    def __init__(self, matrix):
+        self.embedding_ = matrix[:, :2].astype("float32")
+
+    def transform(self, matrix):
+        return matrix[:, :2].astype("float32") + 100.0
+
+
 @pytest.fixture
 def sample_path():
     assert SAMPLE.exists(), "python scripts/make_sample_data.py 를 먼저 실행하세요"
