@@ -9,8 +9,9 @@ import numpy as np
 
 from hannun.embedding.store import EmbeddingStore
 
-from .clusterer import ClusterConfig, cluster_vectors, reduce_vectors
+from .clusterer import ClusterConfig, attach_new_issues, cluster_vectors, fit_map, reduce_vectors
 from .store import IssueStore
+from .umap_map import MapStore
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,9 @@ class ClusterStats:
     issues: int = 0
     noise: int = 0
     largest_issue: int = 0
+    map_fitted: bool = False
+    map_transformed: int = 0
+    new_issues: int = 0
     partitions: list[str] = field(default_factory=list)
 
     def to_dict(self):
@@ -30,12 +34,17 @@ class ClusterStats:
 
 
 def cluster(embeddings: EmbeddingStore, store: IssueStore, config: ClusterConfig | None = None,
-            start_date: str | None = None, end_date: str | None = None, reduce_fn=None):
+            start_date: str | None = None, end_date: str | None = None, reduce_fn=None,
+            map_store: MapStore | None = None, refit_map: bool = False, fit_fn=None):
     """날짜 범위(UTC, 양끝 포함)의 대표 기사 벡터 전체를 한 창으로 놓고 이슈를 묶는다.
 
     dedup 과 같은 창 의미론 — 쪼개서 두 번 돌리면 경계를 넘는 이슈를 놓친다.
     입력은 embedding 테이블(대표 기사만)이라 접힌 기사는 애초에 없다.
-    reduce_fn 은 테스트 주입용 — umap 없이 파이프라인을 검증한다.
+
+    map_store 를 주면 창의 고정 지도(티켓 128)를 쓴다: 지도가 없으면 학습해 저장하고, 있으면
+    좌표 없는 기사만 transform 해 얹은 뒤 HDBSCAN 을 돌리고, 노이즈에서 새 이슈를 따로
+    찾는다(attach_new_issues). 없으면 종전대로 매번 UMAP 을 새로 학습한다.
+    reduce_fn·fit_fn 은 테스트 주입용 — umap 없이 파이프라인을 검증한다.
     """
     config = config or ClusterConfig()
     stats = ClusterStats()
@@ -57,14 +66,22 @@ def cluster(embeddings: EmbeddingStore, store: IssueStore, config: ClusterConfig
     if len(models) > 1:
         raise ValueError(f"embedding models are mixed within the window: {sorted(models)}")
 
+    article_ids = table.column("article_id").to_pylist()
     matrix = np.array(table.column("vector").to_pylist(), dtype="float32")
     if reduce_fn is not None:
         points = reduce_fn(matrix)
+    elif map_store is not None and config.umap_dims:
+        points, stats.map_fitted, stats.map_transformed = map_store.coordinates(
+            stats.window_start, article_ids, matrix, config, models.pop(),
+            fit_fn or (lambda m: fit_map(m, config)), refit_map,
+        )
     elif config.umap_dims:
         points = reduce_vectors(matrix, config)
     else:
         points = matrix
     labels = cluster_vectors(points, config)
+    if map_store is not None:
+        labels, stats.new_issues = attach_new_issues(matrix, labels, config)
 
     sizes = collections.Counter(int(label) for label in labels if label >= 0)
     stats.issues = len(sizes)
@@ -74,7 +91,7 @@ def cluster(embeddings: EmbeddingStore, store: IssueStore, config: ClusterConfig
     clustered_at = datetime.now(timezone.utc)
     by_date = collections.defaultdict(list)
     for article_id, publisher_id, published_date, label in zip(
-            table.column("article_id").to_pylist(), table.column("publisher_id").to_pylist(),
+            article_ids, table.column("publisher_id").to_pylist(),
             table.column("published_date").to_pylist(), labels):
         label = int(label)
         by_date[published_date].append({
@@ -93,6 +110,7 @@ def cluster(embeddings: EmbeddingStore, store: IssueStore, config: ClusterConfig
 
     log.info(
         f"cluster done: rows={stats.rows} issues={stats.issues} noise={stats.noise} "
-        f"largest={stats.largest_issue}"
+        f"largest={stats.largest_issue} map_fitted={stats.map_fitted} "
+        f"map_transformed={stats.map_transformed} new_issues={stats.new_issues}"
     )
     return stats

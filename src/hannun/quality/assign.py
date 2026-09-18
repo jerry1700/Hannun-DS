@@ -10,10 +10,11 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
+from hannun.clustering.centroids import issue_centroids, nearest_issue_assignments
 from hannun.clustering.store import IssueStore
 from hannun.embedding.store import EmbeddingStore
 
-from .rules import QualityConfig, issue_centroids, nearest_issue_assignments, structured_issue_ids
+from .rules import QualityConfig, structured_issue_ids
 
 log = logging.getLogger(__name__)
 
