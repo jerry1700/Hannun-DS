@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -49,6 +51,31 @@ def load_previous(target: Path) -> dict:
 
 def unchanged(entry, links: frozenset, title: str, category: str) -> bool:
     return entry is not None and entry[1] == links and entry[2] == title and entry[3] == category
+
+
+def analyze_issues(issue_datas: list, workers: int) -> list:
+    """issue_data 목록을 enrich_issue 로 분석해 같은 순서로 돌려준다.
+
+    분석은 이슈 단위로 독립인 순수 CPU 작업이라 workers 개 프로세스로 나누면 그만큼 빨라진다
+    (S15P21E105-123 3단계). 세부 견해 라벨(120)이 문장 임베딩 모델을 쓰므로 프로세스마다 모델을
+    한 번씩 올리고, 스레드 수를 1 로 묶어 프로세스끼리 코어를 빼앗지 않게 한다. spawn 을 쓰는
+    이유: 부모가 pandas·pyarrow 스레드를 이미 띄운 뒤라 fork 는 교착 위험이 있고, 테스트가 도는
+    Windows 에는 fork 가 없다."""
+    if workers <= 1 or len(issue_datas) < 2:
+        return [enrich_issue(issue_data) for issue_data in issue_datas]
+
+    for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        os.environ.setdefault(name, "1")
+    # 큰 이슈부터 나눈다 — 공통 사실 추출이 문장 수의 제곱이라 기사 수십 건짜리 이슈 하나가
+    # 수 분을 먹는데, 그런 게 꼬리에 남으면 다른 프로세스가 놀면서 기다린다
+    order = sorted(range(len(issue_datas)), key=lambda i: -len(issue_datas[i]["articles"]))
+    context = multiprocessing.get_context("spawn")
+    with context.Pool(min(workers, len(issue_datas))) as pool:
+        results = pool.map(enrich_issue, [issue_datas[i] for i in order], chunksize=1)
+    enriched = [None] * len(issue_datas)
+    for i, result in zip(order, results):
+        enriched[i] = result
+    return enriched
 
 
 def export(args) -> None:
@@ -155,6 +182,8 @@ def export(args) -> None:
         "summary_issues": len(summary),
         "exported_issues": 0,
         "reused_issues": 0,
+        "analyzed_issues": 0,
+        "workers": args.workers,
         "skipped_no_articles": 0,
         "empty_briefings": 0,
         "articles": 0,
@@ -163,6 +192,10 @@ def export(args) -> None:
     }
 
     try:
+        # 1회차: 이슈마다 재사용할 줄인지, 분석할 입력인지 정한다. 분석은 프로세스 풀로 한 번에
+        # 돌리고 결과를 같은 순서로 받으므로, 출력 순서(issue_summary 순)는 종전과 같다
+        lines = []
+        pending = []
         for issue in summary.itertuples(index=False):
             rows = articles[
                 articles["issue_id"]
@@ -216,110 +249,33 @@ def export(args) -> None:
                 stats["articles"] += len(rows)
                 if entry[4]:
                     stats["empty_briefings"] += 1
-                if output is not None:
-                    output.write(entry[0] + "\n")
+                lines.append(entry[0])
                 continue
 
-            # 기존 enrich_issue 입력 형식으로 변환
-            issue_data = {
-                "issue_cluster_id": str(
-                    issue.issue_id
-                ),
-                "representative_title":
-                    representative_title,
-                "articles": [
-                    {
-                        "article_id": str(
-                            row.article_id
-                        ),
-                        "title": text(row.title),
-                        "content": text(
-                            row.content_clean
-                        ),
-                        "publisher_name": text(
-                            row.publisher_name
-                        ),
-                    }
-                    for row
-                    in rows.itertuples(index=False)
-                ],
-            }
+            lines.append(len(pending))
+            pending.append((issue, rows, representative_title, category))
 
-            # 기존 DS2 분석 실행
-            enriched = enrich_issue(
-                issue_data
-            )
+        enriched_list = analyze_issues(
+            [issue_input(issue, rows, title) for issue, rows, title, _ in pending],
+            args.workers,
+        )
+        stats["analyzed_issues"] = len(pending)
 
-            stance_by_id = {
-                str(article["article_id"]):
-                    article["stance"]
-                for article
-                in enriched["articles"]
-            }
+        for item in lines:
+            if isinstance(item, str):
+                if output is not None:
+                    output.write(item + "\n")
+                continue
 
-            viewpoint_by_id = {
-                str(article["article_id"]):
-                    article["viewpoint_group_label"]
-                for article
-                in enriched["articles"]
-            }
-
-            # BE 는 commonFactsBriefing 을 List<String> 으로 받는다. generate_fact_summary
-            # 가 공통 사실 문장을 리스트로 주므로 합치지 않고 그대로 넘긴다 (S15P21E105-69)
-            briefing = [
-                text(sentence)
-                for sentence
-                in enriched["fact_summary"]
-                if text(sentence)
-            ]
-
-            clustered_at = pd.Timestamp(
-                issue.summarized_at
-            )
-
-            if clustered_at.tzinfo is None:
-                clustered_at = (
-                    clustered_at.tz_localize("UTC")
-                )
-
-            # BE 전달 형식
-            message = {
-                "clusterId": int(
-                    issue.issue_id
-                ),
-                "category": category,
-                "factSummary":
-                    representative_title,
-                "commonFactsBriefing":
-                    briefing,
-                "clusteredAt": (
-                    clustered_at
-                    .tz_convert("Asia/Seoul")
-                    .isoformat()
-                ),
-                "articles": [
-                    {
-                        "link": text(row.url),
-                        "viewpointGroupLabel":
-                            viewpoint_by_id[
-                                str(row.article_id)
-                            ],
-                        "stance":
-                            stance_by_id[
-                                str(row.article_id)
-                            ],
-                    }
-                    for row
-                    in rows.itertuples(index=False)
-                ],
-            }
+            issue, rows, representative_title, category = pending[item]
+            message = build_message(issue, rows, representative_title, category, enriched_list[item])
 
             stats["exported_issues"] += 1
             stats["articles"] += len(
                 message["articles"]
             )
 
-            if not briefing:
+            if not message["commonFactsBriefing"]:
                 stats["empty_briefings"] += 1
 
             if output is not None:
@@ -352,6 +308,99 @@ def export(args) -> None:
             indent=2,
         )
     )
+
+
+def issue_input(issue, rows, representative_title: str) -> dict:
+    """기존 enrich_issue 입력 형식으로 변환"""
+    return {
+        "issue_cluster_id": str(
+            issue.issue_id
+        ),
+        "representative_title":
+            representative_title,
+        "articles": [
+            {
+                "article_id": str(
+                    row.article_id
+                ),
+                "title": text(row.title),
+                "content": text(
+                    row.content_clean
+                ),
+                "publisher_name": text(
+                    row.publisher_name
+                ),
+            }
+            for row
+            in rows.itertuples(index=False)
+        ],
+    }
+
+
+def build_message(issue, rows, representative_title: str, category: str, enriched: dict) -> dict:
+    """DS2 분석 결과를 BE 전달 형식으로"""
+    stance_by_id = {
+        str(article["article_id"]):
+            article["stance"]
+        for article
+        in enriched["articles"]
+    }
+
+    viewpoint_by_id = {
+        str(article["article_id"]):
+            article["viewpoint_group_label"]
+        for article
+        in enriched["articles"]
+    }
+
+    # BE 는 commonFactsBriefing 을 List<String> 으로 받는다. generate_fact_summary
+    # 가 공통 사실 문장을 리스트로 주므로 합치지 않고 그대로 넘긴다 (S15P21E105-69)
+    briefing = [
+        text(sentence)
+        for sentence
+        in enriched["fact_summary"]
+        if text(sentence)
+    ]
+
+    clustered_at = pd.Timestamp(
+        issue.summarized_at
+    )
+
+    if clustered_at.tzinfo is None:
+        clustered_at = (
+            clustered_at.tz_localize("UTC")
+        )
+
+    return {
+        "clusterId": int(
+            issue.issue_id
+        ),
+        "category": category,
+        "factSummary":
+            representative_title,
+        "commonFactsBriefing":
+            briefing,
+        "clusteredAt": (
+            clustered_at
+            .tz_convert("Asia/Seoul")
+            .isoformat()
+        ),
+        "articles": [
+            {
+                "link": text(row.url),
+                "viewpointGroupLabel":
+                    viewpoint_by_id[
+                        str(row.article_id)
+                    ],
+                "stance":
+                    stance_by_id[
+                        str(row.article_id)
+                    ],
+            }
+            for row
+            in rows.itertuples(index=False)
+        ],
+    }
 
 
 def main() -> None:
@@ -392,6 +441,12 @@ def main() -> None:
     parser.add_argument(
         "--reuse-unchanged",
         action="store_true",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="이슈 분석을 나눠 돌릴 프로세스 수. 1 이면 순차 (S15P21E105-123)",
     )
 
     export(
