@@ -1,5 +1,6 @@
 """임베딩 인코더 — 제목과 본문 앞부분을 문장 벡터로 바꾼다. STEP 2 의 심장."""
 
+import hashlib
 import time
 from dataclasses import dataclass
 
@@ -19,6 +20,15 @@ class EncoderConfig:
 
 def build_input(title: str, body: str, body_chars: int):
     return f"{title}\n{body[:body_chars]}"
+
+
+def input_sha1(config: EncoderConfig, title: str, body: str):
+    """인코더에 실제로 들어가는 문자열의 해시 — 임베딩 행의 유효 조건 (티켓 131).
+
+    제목·정제본·접두어·본문 길이 중 하나라도 바뀌면 벡터도 바뀌어야 하므로 그 전부를 해시에 넣는다.
+    """
+    payload = config.passage_prefix + build_input(title, body, config.body_chars)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
 def load_model(config: EncoderConfig):

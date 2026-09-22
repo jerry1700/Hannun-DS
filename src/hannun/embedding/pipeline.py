@@ -8,7 +8,7 @@ from hannun.dedup.store import DedupStore
 from hannun.ingest.gold import GoldStore
 from hannun.preprocess.store import CleanStore
 
-from .encoder import EncoderConfig, build_input, encode_texts, load_model
+from .encoder import EncoderConfig, build_input, encode_texts, input_sha1, load_model
 from .store import EmbeddingStore
 
 log = logging.getLogger(__name__)
@@ -22,6 +22,8 @@ class EmbedStats:
     folded: int = 0
     already: int = 0
     encoded: int = 0
+    reencoded: int = 0
+    removed: int = 0
     docs_per_s: float = 0.0
 
     def to_dict(self):
@@ -31,13 +33,14 @@ class EmbedStats:
 def embed(gold: GoldStore, clean: CleanStore, dedup: DedupStore, store: EmbeddingStore,
           config: EncoderConfig | None = None, start_date: str | None = None,
           end_date: str | None = None, encode_fn=None):
-    """날짜 범위(UTC, 양끝 포함)의 대표 기사를 임베딩한다. 재실행해도 새 기사만 인코딩한다.
+    """날짜 범위(UTC, 양끝 포함)의 대표 기사를 임베딩한다. 재실행해도 바뀐 기사만 인코딩한다.
 
-    접힌 기사(duplicate_of 있음)는 건너뛴다 — 같은 글이 벡터 공간에 여러 번 찍히면
-    STEP 3 의 밀도 기반 군집화가 그 자리를 과대평가한다. dedup 파티션이 아직 없으면
-    전부 대표로 간주하고 경고만 남긴다(운영 순서: 정제 → 중복 → 임베딩).
-    이미 저장된 벡터 중 모델이 다른 것은 버리고 다시 인코딩한다 — 모델이 섞인
-    테이블은 군집화에서 쓸 수 없다. encode_fn 은 테스트 주입용.
+    접힌 기사(duplicate_of 있음)는 건너뛰고, 이전 실행에서 인코딩됐더라도 벡터를 지운다 —
+    같은 글이 벡터 공간에 여러 번 찍히면 STEP 3 의 밀도 기반 군집화가 그 자리를 과대평가한다.
+    저장된 벡터는 인코더 입력 해시(input_sha1)가 같을 때만 재사용한다 — 재크롤링(replace)이나
+    정제 규칙 개정으로 본문이 바뀌면 다시 인코딩한다(티켓 131). 모델이 다른 행도 버린다 —
+    모델이 섞인 테이블은 군집화에서 쓸 수 없다. dedup 파티션이 아직 없으면 전부 대표로
+    간주하고 경고만 남긴다(운영 순서: 정제 → 중복 → 임베딩). encode_fn 은 테스트 주입용.
     """
     config = config or EncoderConfig()
     stats = EmbedStats(model=config.model_name)
@@ -75,11 +78,11 @@ def embed(gold: GoldStore, clean: CleanStore, dedup: DedupStore, store: Embeddin
         else:
             log.warning(f"dedup 파티션 없음: {date_str} — 전부 대표로 간주하고 임베딩합니다")
 
-        existing_table = store.read_table(date_str, date_str)
-        existing = [row for row in existing_table.to_pylist() if row["model"] == config.model_name]
-        existing_ids = {row["article_id"] for row in existing}
+        existing_rows = store.read_table(date_str, date_str).to_pylist()
+        # 옛 파티션에는 input_sha1 컬럼이 없어 해시가 None 으로 읽힌다 — 그 행은 전부 다시 인코딩된다(첫 실행 한 번)
+        current = {row["article_id"]: row for row in existing_rows if row["model"] == config.model_name}
 
-        todo = []
+        kept, todo = [], []
         for article_id, publisher_id, title, content in zip(
                 *(table.column(c).to_pylist()
                   for c in ("article_id", "publisher_id", "title", "content"))):
@@ -87,27 +90,37 @@ def embed(gold: GoldStore, clean: CleanStore, dedup: DedupStore, store: Embeddin
             if article_id in folded:
                 stats.folded += 1
                 continue
-            if article_id in existing_ids:
-                stats.already += 1
-                continue
             text = clean_of.get(article_id) or content
-            todo.append((article_id, publisher_id, build_input(title, text, config.body_chars)))
+            digest = input_sha1(config, title, text)
+            row = current.get(article_id)
+            if row is not None and row.get("input_sha1") == digest:
+                stats.already += 1
+                kept.append(row)
+                continue
+            if row is not None:
+                stats.reencoded += 1
+            todo.append((article_id, publisher_id, build_input(title, text, config.body_chars), digest))
 
-        rows = existing
+        # kept 에도 todo 에도 없는 기존 행 — 접힌 기사, 다른 모델, Gold 에서 사라진 기사 — 는 여기서 빠진다
+        replaced = {article_id for article_id, _, _, _ in todo if article_id in current}
+        stats.removed += len(existing_rows) - len(kept) - len(replaced)
+
+        rows = kept
         if todo:
-            vectors, docs_per_s = encode([t for _, _, t in todo])
+            vectors, docs_per_s = encode([text for _, _, text, _ in todo])
             total_secs += len(todo) / max(docs_per_s, 1e-9)
             stats.encoded += len(todo)
-            rows = existing + [{
+            rows = kept + [{
                 "article_id": article_id,
                 "publisher_id": publisher_id,
                 "published_date": date_str,
                 "vector": vector,
                 "dim": len(vector),
                 "model": config.model_name,
+                "input_sha1": digest,
                 "encoded_at": encoded_at,
-            } for (article_id, publisher_id, _), vector in zip(todo, vectors)]
-        if todo or existing_table.num_rows != len(existing):
+            } for (article_id, publisher_id, _, digest), vector in zip(todo, vectors)]
+        if todo or len(kept) != len(existing_rows):
             store.write_partition(date_str, rows)
         stats.partitions.append(date_str)
 
@@ -115,6 +128,7 @@ def embed(gold: GoldStore, clean: CleanStore, dedup: DedupStore, store: Embeddin
         stats.docs_per_s = round(stats.encoded / total_secs, 1)
     log.info(
         f"embed done: partitions={len(stats.partitions)} rows={stats.rows} folded={stats.folded} "
-        f"already={stats.already} encoded={stats.encoded} ({stats.docs_per_s}/s)"
+        f"already={stats.already} encoded={stats.encoded} reencoded={stats.reencoded} "
+        f"removed={stats.removed} ({stats.docs_per_s}/s)"
     )
     return stats

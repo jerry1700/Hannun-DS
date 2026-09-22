@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-09-22
+
+### 한 일
+- **코드 리뷰 12건 검토** — 우리(DS1) 6건, DE 6건. 우리 것: 임베딩 캐시 결함 2(High), UMAP 지도
+  원자성·Gold 교체 파티션·체인 완료 마커(Medium), Pydantic 엄격도(설계 재검토). DE 것 중
+  dataset_sender 가 첫 파일만 보내는 버그(루프 안 return)는 즉시 전달 대상. 티켓 131·132 로 나눔.
+- **131 임베딩 캐시 무효화** — `embed()` 가 (1) 이번에 접힌 기사의 옛 벡터를 지우고 (2) 인코더
+  입력 해시 `input_sha1` 이 같을 때만 재사용한다. 옛 파티션(컬럼 없음)은 첫 실행에 전부 재인코딩,
+  `read_table` 은 컬럼이 다른 파티션을 promote 로 합침. 통계 `reencoded`·`removed`. 테스트 +4.
+  상세는 [tickets/S15P21E105-131.md](tickets/S15P21E105-131.md).
+- **132 저장 원자성**(별도 브랜치, 131 머지 뒤 MR) — UMAP 지도 세 파일을 `gen=…` 세대 디렉터리에
+  쓰고 `current` 포인터만 교체(옛 배치는 다음 재학습까지 그대로 읽음), Gold upsert 가 저장소
+  전체에서 article_id 를 찾아 replace 는 옛 파티션 행 삭제·keep 은 건너뜀, 체인 끝에
+  `ds_output/_chain_status.json`(run_id·status·창·단계별 rc) 을 EXIT trap 으로 남김. 테스트 +6,
+  가짜 인터프리터로 체인 3종(정상·실패·assign 폴백) 확인. DE 읽기 규칙 문구는 132 §4.
+- 운영 점검 — 실패 0, 창 전환 재군집 7분.
+
+### 다음
+- [ ] 131 MR → 재빌드 → 첫 `step embed` 1~2분·`reencoded` 창 크기 확인, 이후 20~30초
+- [ ] 132 MR(131 머지 뒤 rebase) → 재빌드 → 첫 재군집 `map_fitted false`, 창 전환 뒤 `current`·`gen=…` 하나, `_chain_status.json` status ok / DE 에 마커 읽기 규칙 전달(132 §4)
+- [ ] DE·BE 답 대기: 종료 이슈 처리·구성원 교체·supersededBy / 목차형 기사 격리 티켓 / 이슈 병합·umap_dims 스윕
+
+---
+
 ## 2026-09-21
 
 ### 한 일
