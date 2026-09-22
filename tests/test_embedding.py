@@ -3,6 +3,7 @@ import pytest
 from hannun.dedup import DedupStore, dedup
 from hannun.embedding import EmbeddingStore, embed
 from hannun.ingest import GoldStore, ingest
+from hannun.ingest.gold import write_parquet_atomic
 from hannun.ingest.schema import expected_article_id
 from hannun.preprocess import CleanStore, PreprocessConfig, preprocess
 
@@ -105,3 +106,55 @@ def test_partitions_follow_published_date(stores):
     assert store.partition_dates() == ["2026-08-20", "2026-08-21"]
     df = store.read("2026-08-21", "2026-08-21")
     assert set(df.article_id) == {alias_id("unrelated")}
+
+
+def test_late_duplicate_removes_its_vector(stores):
+    gold, clean, ded, store = stores(run_dedup=False)
+    embed(gold, clean, ded, store, encode_fn=fake_encode)   # 중복 판정 전이라 3건 전부 인코딩
+    dedup(gold, clean, ded)                                  # 이제 reprint 가 original 밑으로 접힌다
+    stats = embed(gold, clean, ded, store, encode_fn=fake_encode)
+
+    assert stats.folded == 1 and stats.removed == 1 and stats.encoded == 0
+    assert set(store.read().article_id) == {alias_id("original"), alias_id("unrelated")}
+
+
+def test_changed_text_is_reencoded(stores, article_jsonl):
+    gold, clean, ded, store = stores()
+    embed(gold, clean, ded, store, encode_fn=fake_encode)
+    before = store.read().set_index("article_id").loc[alias_id("unrelated")].vector[0]
+
+    # 재크롤링으로 본문이 바뀐 기사 — replace 로 Gold 를 갈고 정제를 다시 돈다
+    changed = ("unrelated", "hani", "2026-08-21T08:00:00Z", OTHER + " 구단은 다음 시즌 계획도 함께 발표했다.")
+    ingest([article_jsonl([changed], name="fix.jsonl")], gold, on_conflict="replace")
+    preprocess(gold, clean, PreprocessConfig(min_clean_len=10))
+    stats = embed(gold, clean, ded, store, encode_fn=fake_encode)
+    after = store.read().set_index("article_id").loc[alias_id("unrelated")].vector[0]
+
+    assert stats.reencoded == 1 and stats.encoded == 1 and stats.already == 1
+    assert after > before   # 스텁 벡터의 첫 성분이 입력 길이 — 본문이 길어졌으니 커진다
+
+
+def test_rows_without_input_hash_are_reencoded(stores):
+    gold, clean, ded, store = stores()
+    embed(gold, clean, ded, store, encode_fn=fake_encode)
+    # input_sha1 이 없던 옛 스키마 파티션을 흉내 낸다
+    old = store.read_table("2026-08-20", "2026-08-20")
+    write_parquet_atomic(old.select([c for c in old.column_names if c != "input_sha1"]),
+                         store.partition_path("2026-08-20"))
+
+    stats = embed(gold, clean, ded, store, encode_fn=fake_encode)
+
+    assert stats.reencoded == 1 and stats.already == 1   # 8/20 의 original 만 다시, 8/21 의 unrelated 는 그대로
+    assert store.read().input_sha1.notna().all()
+
+
+def test_read_table_unifies_old_and_new_partition_schemas(stores):
+    gold, clean, ded, store = stores()
+    embed(gold, clean, ded, store, encode_fn=fake_encode)
+    old = store.read_table("2026-08-20", "2026-08-20")
+    write_parquet_atomic(old.select([c for c in old.column_names if c != "input_sha1"]),
+                         store.partition_path("2026-08-20"))
+
+    table = store.read_table("2026-08-20", "2026-08-21")
+
+    assert "input_sha1" in table.column_names and table.num_rows == 2

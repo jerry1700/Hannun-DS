@@ -15,6 +15,7 @@ EMBEDDING_SCHEMA = pa.schema(
         ("vector", pa.list_(pa.float32())),
         ("dim", pa.int32()),
         ("model", pa.string()),
+        ("input_sha1", pa.string()),
         ("encoded_at", pa.timestamp("us", tz="UTC")),
     ]
 )
@@ -25,8 +26,8 @@ class EmbeddingStore:
 
     벡터를 저장해 두는 이유: 배정은 15분마다, 재군집은 매시 도는데 그때마다 같은
     기사를 다시 인코딩하면 인코딩이 전체 비용을 지배한다. 기사가 들어올 때 한 번
-    계산하고, 군집화는 여기서 읽기만 한다. 파티션 안에서 article_id 멱등 — 이미
-    인코딩된 기사는 pipeline 이 건너뛴다.
+    계산하고, 군집화는 여기서 읽기만 한다. 파티션 안에서 article_id 멱등 — 인코더
+    입력 해시(input_sha1)가 같은 기사는 pipeline 이 건너뛰고, 다르면 다시 인코딩한다.
     """
 
     def __init__(self, root):
@@ -49,7 +50,9 @@ class EmbeddingStore:
             if columns is None:
                 return EMBEDDING_SCHEMA.empty_table()
             return pa.schema([EMBEDDING_SCHEMA.field(c) for c in columns]).empty_table()
-        return pa.concat_tables([pq.read_table(self.partition_path(d), columns=columns) for d in dates])
+        # input_sha1 컬럼이 없는 옛 파티션과 섞여 읽힐 수 있다 — 빈 컬럼으로 맞춘다(티켓 131)
+        return pa.concat_tables([pq.read_table(self.partition_path(d), columns=columns) for d in dates],
+                                promote_options="default")
 
     def read(self, start_date: str | None = None, end_date: str | None = None,
              columns: list[str] | None = None):
