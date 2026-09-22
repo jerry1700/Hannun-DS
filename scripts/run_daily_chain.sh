@@ -23,18 +23,41 @@ MODE="${MODE:-recluster}"         # recluster(매시) | assign(15분 — 경계 
 
 start="${START:-$(date -u -d "$((WINDOW_DAYS - 1)) days ago" +%F)}"
 end="${END:-$(date -u +%F)}"
-echo "[chain] $(date -u +%FT%TZ) window ${start} ~ ${end} (UTC) mode=${MODE}"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)"
+started_at="$(date -u +%FT%TZ)"
+echo "[chain] ${started_at} window ${start} ~ ${end} (UTC) mode=${MODE}"
 
 # 단계별 소요를 남긴다 — 어느 단계가 병목인지 로그만으로 알 수 있게(티켓 123). 종료 코드를
 # 그대로 돌려줘 `step a … || step b …` 폴백이 동작한다
+steps_json=""
 step() {
-    local name=$1 t0 rc
+    local name=$1 t0 rc elapsed
     shift
     t0=$(date +%s)
-    "$@"; rc=$?
-    echo "[chain] step ${name} $(( $(date +%s) - t0 ))s rc=${rc}"
+    # && || 로 받아야 set -e 가 실패한 단계의 로그·마커 기록 전에 셸을 끝내지 않는다
+    "$@" && rc=0 || rc=$?
+    elapsed=$(( $(date +%s) - t0 ))
+    echo "[chain] step ${name} ${elapsed}s rc=${rc}"
+    steps_json="${steps_json:+${steps_json}, }{\"step\": \"${name}\", \"seconds\": ${elapsed}, \"rc\": ${rc}}"
     return $rc
 }
+
+# 완료 마커 — 이 실행이 끝까지 갔는지, 어느 창·모드였는지, 무엇을 냈는지를 한 파일로 남긴다.
+# 하류(DE gold_issue_feed, 운영자)는 산출 파일의 mtime 만으로는 체인이 중간에 죽었는지 알 수
+# 없다(티켓 132). status 는 ok 또는 failed, failed 면 어느 단계에서 멈췄는지 steps 의 마지막
+# rc 로 읽는다. 임시 파일에 쓰고 mv 해 읽는 쪽이 반쪽 JSON 을 보지 않게 한다
+write_marker() {
+    local status=$1 marker="${DS_OUTPUT}/_chain_status.json"
+    mkdir -p "$DS_OUTPUT"
+    printf '{"run_id": "%s", "status": "%s", "mode": "%s", "window_start": "%s", "window_end": "%s",\n' \
+        "$run_id" "$status" "$MODE" "$start" "$end" > "${marker}.tmp"
+    printf ' "started_at": "%s", "finished_at": "%s", "output": "%s",\n' \
+        "$started_at" "$(date -u +%FT%TZ)" "${DS_OUTPUT}/${output_day}.jsonl" >> "${marker}.tmp"
+    printf ' "steps": [%s]}\n' "$steps_json" >> "${marker}.tmp"
+    mv -f "${marker}.tmp" "$marker"
+}
+output_day="$(TZ=Asia/Seoul date +%F)"
+trap 'rc=$?; if [ "$rc" -eq 0 ]; then write_marker ok; else write_marker failed; fi' EXIT
 
 for i in $(seq 0 $((INGEST_DAYS - 1))); do
     day=$(TZ=Asia/Seoul date -d "-${i} day" +%F)
@@ -73,6 +96,6 @@ EXPORT_WORKERS="${EXPORT_WORKERS:-3}"
 mkdir -p "$DS_OUTPUT"
 step export "$PY" "$SCRIPTS/export_ds2_jsonl.py" --gold-root "$GOLD_ROOT" \
     --start "$start" --end "$end" --window "$start" \
-    --output-day "$(TZ=Asia/Seoul date +%F)" --output-root "$DS_OUTPUT" --overwrite --reuse-unchanged \
+    --output-day "$output_day" --output-root "$DS_OUTPUT" --overwrite --reuse-unchanged \
     --workers "$EXPORT_WORKERS"
 echo "[chain] done $(date -u +%FT%TZ)"
