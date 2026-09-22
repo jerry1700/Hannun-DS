@@ -19,11 +19,14 @@
   전체에서 article_id 를 찾아 replace 는 옛 파티션 행 삭제·keep 은 건너뜀, 체인 끝에
   `ds_output/_chain_status.json`(run_id·status·창·단계별 rc) 을 EXIT trap 으로 남김. 테스트 +6,
   가짜 인터프리터로 체인 3종(정상·실패·assign 폴백) 확인. DE 읽기 규칙 문구는 132 §4.
+- **131·132 머지·배포(12시 재빌드)** — 12:05 재군집 첫 `step embed` **708초**(창 전체 재인코딩,
+  예상 1~2분보다 길어 체인 17분), 12:22 배정 embed 26초로 복귀. 완료 마커 `_chain_status.json`
+  두 실행 모두 status ok. 지도는 옛 배치 그대로 읽음(재학습 없음), 새 배치는 09-23 09:05 창 전환에.
 - 운영 점검 — 실패 0, 창 전환 재군집 7분.
 
 ### 다음
-- [ ] 131 MR → 재빌드 → 첫 `step embed` 1~2분·`reencoded` 창 크기 확인, 이후 20~30초
-- [ ] 132 MR(131 머지 뒤 rebase) → 재빌드 → 첫 재군집 `map_fitted false`, 창 전환 뒤 `current`·`gen=…` 하나, `_chain_status.json` status ok / DE 에 마커 읽기 규칙 전달(132 §4)
+- [ ] 131 12:05 로그의 `reencoded`·`removed` 수치를 티켓 131 §5 에 추가
+- [ ] 132 09-23 09:05 창 전환 뒤 `umap_map/window_start=2026-09-23/` 에 `current`·`gen=…` 하나 확인 / DE 에 마커 읽기 규칙 전달(132 §4)
 - [ ] DE·BE 답 대기: 종료 이슈 처리·구성원 교체·supersededBy / 목차형 기사 격리 티켓 / 이슈 병합·umap_dims 스윕
 
 ---
