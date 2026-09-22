@@ -6,8 +6,8 @@ from hannun.ingest.schema import expected_article_id
 YONHAP_URL = "https://www.yna.co.kr/view/AKR20260820000100001"
 
 
-def write_correction(tmp_path):
-    """샘플 1번(연합) 기사와 같은 article_id 로 제목·본문만 바뀐 재크롤링분."""
+def write_correction(tmp_path, published_at="2026-08-20T05:30:00Z"):
+    """샘플 1번(연합) 기사와 같은 article_id 로 제목·본문(원하면 발행 시각까지) 바뀐 재크롤링분."""
     corrected = {
         "schema_version": "1.0",
         "article_id": expected_article_id("yonhap", YONHAP_URL),
@@ -22,7 +22,7 @@ def write_correction(tmp_path):
         "category_str": None,
         "thumbnail_url": None,
         "language": "ko",
-        "published_at": "2026-08-20T05:30:00Z",
+        "published_at": published_at,
     }
     fix = tmp_path / "fix.jsonl"
     fix.write_text(json.dumps(corrected, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -98,3 +98,28 @@ def test_on_conflict_replace_updates_content(tmp_path, sample_path):
     df = store.read()
     assert len(df) == 5
     assert df.set_index("publisher_id").loc["yonhap", "title"] == "수정된 제목"
+
+
+def test_on_conflict_replace_moves_article_when_published_date_changes(tmp_path, sample_path):
+    store = GoldStore(tmp_path / "gold")
+    ingest([sample_path], store)
+    before = store.partition_dates()
+
+    # 발행 시각이 다음 날로 고쳐진 재크롤링 — 옛 날짜 파티션에서 빠지고 새 날짜에만 있어야 한다
+    stats = ingest([write_correction(tmp_path, "2026-08-21T01:00:00Z")], store, on_conflict="replace")
+    df = store.read()
+
+    assert stats.replaced == 1 and stats.written == 0
+    assert len(df) == 5 and df.article_id.is_unique
+    assert df.set_index("publisher_id").loc["yonhap", "published_date"] == "2026-08-21"
+    assert store.partition_dates() == sorted(set(before) | {"2026-08-21"})
+
+
+def test_on_conflict_keep_skips_article_found_in_another_partition(tmp_path, sample_path):
+    store = GoldStore(tmp_path / "gold")
+    ingest([sample_path], store)
+
+    stats = ingest([write_correction(tmp_path, "2026-08-21T01:00:00Z")], store, on_conflict="keep")
+
+    assert stats.skipped_existing == 1 and stats.written == 0
+    assert "2026-08-21" not in store.partition_dates() and len(store.read()) == 5
