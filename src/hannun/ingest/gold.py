@@ -77,6 +77,11 @@ class GoldStore:
         keep 이 기본인 이유: 같은 파일을 두 번 넣어도 결과가 같아야 하고, STEP 1
         이후 결과가 content 를 참조하는데 그게 아래에서 조용히 바뀌면 재현이
         안 된다. 재크롤링을 반영할 때만 replace 를 명시한다.
+
+        기사가 어느 파티션에 있는지는 발행 시각이 정하는데 재크롤링이 그 시각을 고칠 수
+        있다. 그래서 같은 article_id 를 저장소 전체에서 찾는다 — keep 은 다른 날짜에 있어도
+        건너뛰고, replace 는 옛 날짜의 행을 지운다. 안 그러면 한 기사가 두 파티션에 남아
+        하류 조인이 두 줄을 받는다(티켓 132).
         """
         if on_conflict not in ("keep", "replace"):
             raise ValueError(f"on_conflict must be keep or replace: {on_conflict}")
@@ -86,41 +91,63 @@ class GoldStore:
         for r in rows:
             by_date[r["published_date"]].append(r)
 
+        located = self._locate({r["article_id"] for rs in by_date.values() for r in rs})
+        moved_out = defaultdict(set)   # 옛 파티션 → replace 로 다른 날짜에 새로 쓰이는 article_id
         for date_str in sorted(by_date):
             new_table = pa.Table.from_pylist(by_date[date_str], schema=GOLD_SCHEMA)
+            new_ids = new_table.column("article_id").to_pylist()
             path = self.partition_path(date_str)
+
+            if on_conflict == "keep":
+                mask = [i not in located for i in new_ids]
+                upserted.skipped_existing += mask.count(False)
+                upserted.written += mask.count(True)
+                new_table = new_table.filter(pa.array(mask, pa.bool_()))
+                if new_table.num_rows == 0:
+                    continue
+            else:
+                for i in new_ids:
+                    if i in located:
+                        upserted.replaced += 1
+                        if located[i] != date_str:
+                            moved_out[located[i]].add(i)
+                    else:
+                        upserted.written += 1
 
             if path.exists():
                 existing = pq.read_table(path).cast(GOLD_SCHEMA)
-                existing_ids = existing.column("article_id").to_pylist()
-                new_ids = new_table.column("article_id").to_pylist()
-
-                if on_conflict == "keep":
-                    existing_set = set(existing_ids)
-                    mask = [i not in existing_set for i in new_ids]
-                    upserted.skipped_existing += mask.count(False)
-                    upserted.written += mask.count(True)
-                    new_table = new_table.filter(pa.array(mask, pa.bool_()))
-                    combined = pa.concat_tables([existing, new_table])
-                else:
+                if on_conflict == "replace":
                     new_set = set(new_ids)
-                    keep_mask = [i not in new_set for i in existing_ids]
-                    replaced = keep_mask.count(False)
-                    upserted.replaced += replaced
-                    upserted.written += len(new_ids) - replaced
+                    keep_mask = [i not in new_set for i in existing.column("article_id").to_pylist()]
                     existing = existing.filter(pa.array(keep_mask, pa.bool_()))
-                    combined = pa.concat_tables([existing, new_table])
+                combined = pa.concat_tables([existing, new_table])
             else:
                 combined = new_table
-                upserted.written += new_table.num_rows
 
-            # 순서를 고정해 두면 같은 입력에서 같은 파일이 나온다. 재현·diff 용.
-            combined = combined.sort_by([("published_at", "ascending"), ("article_id", "ascending")])
-            write_parquet_atomic(combined, path)
+            self._write_partition(date_str, combined)
             upserted.partitions.append(date_str)
-            log.debug(f"partition {date_str} → {combined.num_rows} rows")
+
+        for date_str, ids in sorted(moved_out.items()):
+            existing = pq.read_table(self.partition_path(date_str)).cast(GOLD_SCHEMA)
+            keep_mask = [i not in ids for i in existing.column("article_id").to_pylist()]
+            self._write_partition(date_str, existing.filter(pa.array(keep_mask, pa.bool_())))
+            upserted.partitions.append(date_str)
 
         return upserted
+
+    def _locate(self, article_ids: set):
+        """저장소 전체에서 article_id → 파티션 날짜. 컬럼 하나만 읽어 파티션 수만큼 싸다."""
+        found = {}
+        for date_str in self.partition_dates():
+            ids = pq.read_table(self.partition_path(date_str), columns=["article_id"]).column(0).to_pylist()
+            found.update((i, date_str) for i in ids if i in article_ids)
+        return found
+
+    def _write_partition(self, date_str: str, table: pa.Table):
+        # 순서를 고정해 두면 같은 입력에서 같은 파일이 나온다. 재현·diff 용.
+        table = table.sort_by([("published_at", "ascending"), ("article_id", "ascending")])
+        write_parquet_atomic(table, self.partition_path(date_str))
+        log.debug(f"partition {date_str} → {table.num_rows} rows")
 
     def write_rejects(self, rejects: list[Reject], run_id: str):
         if not rejects:
