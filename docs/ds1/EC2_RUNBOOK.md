@@ -55,13 +55,16 @@ Asia/Seoul (2026-09-10 확인). crontab 시각은 서버 TZ 기준이므로 등�
 ```
 ingest → preprocess → dedup → embed → cluster(또는 assign) → succeed → quality → feed → export
 gold/articles → clean → dedup(+dedup_sig) → embedding → issue(+umap_map) → issue_registry → issue_quality
-  → issue_summary → ~/ds_output/<KST 날짜>.jsonl
+  → issue_summary → ~/ds_output/<KST 날짜>.jsonl (+ _chain_status.json 완료 마커, 티켓 132)
 ```
 
 BE 소비 지점: `issue_summary/`(피드: issue_id·대표 기사·hot_score) +
 `issue_registry/`(기사→issue_id) + `issue_quality/`(기사 단위 최종 배정). DE 는 `ds_output/`
 을 병합해 발행한다. `dedup_sig/`(서명 캐시, 티켓 123)와 `umap_map/`(창별 고정 지도, 티켓 128)은
-중간 산출이라 하류가 읽지 않는다 — 지우면 다음 실행이 다시 만든다.
+중간 산출이라 하류가 읽지 않는다 — 지우면 다음 실행이 다시 만든다. `umap_map/` 은 창별로
+`current` 포인터와 `gen=…` 세대 디렉터리 하나(티켓 132) — 세대가 둘 보이면 쓰다 죽은 것이고
+다음 재학습이 치운다. `ds_output/_chain_status.json` 은 마지막 체인의 status(ok/failed)·창·단계별
+소요를 담는다 — 체인이 끝났는지는 로그 대신 이 파일로 본다.
 
 ## 5. 코드 갱신 반영
 
