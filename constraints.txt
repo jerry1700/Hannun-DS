@@ -1,5 +1,6 @@
 # 테스트 406개와 운영 체인이 검증된 버전 (Python 3.12, 2026-09). CI 와 재현 설치에서 -c 로 쓴다.
-# pip install -e ".[dev,clustering]" -c constraints.txt
+# pip install torch --index-url https://download.pytorch.org/whl/cpu
+# pip install -e ".[dev,embedding,clustering]" -c constraints.txt
 numpy==2.5.2
 scipy==1.18.1
 pandas==3.0.5
