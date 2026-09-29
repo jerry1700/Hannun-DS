@@ -416,7 +416,7 @@
 
 - **무경합 임베딩 속도 재측정 → 티켓 11 완전 종료** — threads=4·1,000건 실측
   10.4건/s. 경합 측정치와 같은 자릿수라 모델 비교 결론(7\~10배) 불변, e5 **확정**.
-- **DS1→DS2 계약 초안 → 당일 합의 완료** — [contracts/ds1-to-ds2-issue-tables.md](../../../docs/contracts/ds1-to-ds2-issue-tables.md):
+- **DS1→DS2 계약 초안 → 당일 합의 완료** — [contracts/ds1-to-ds2-issue-tables.md](../contracts/ds1-to-ds2-issue-tables.md):
   테이블 3개 위치·스키마·읽기 예시·주의(issue_local 은 창 임시, 지속 키는 issue_id).
   DS2 합의 3건(문서 §6): ① 테이블→JSON 변환은 DS2 몫, `issue_cluster_id = str(issue_id)`
   ② `keywords` 는 티켓 31 전까지 optional(빈 배열) ③ 역방향 키 확정(기사 article_id,
