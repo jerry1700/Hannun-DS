@@ -54,7 +54,7 @@ scripts/             run_daily_chain.sh(운영 체인), export_ds2_jsonl.py(DS2 
                      score_goldenset_*.py(골드셋 채점), sweep_cluster_params.py(파라미터 스윕),
                      profile_dataset.py, make_*_labeling_html.py(라벨링 시트)
 dags/                Airflow DAG — ds_chain(매시 :05)·ds_assign(:20/:35/:50), 호스트 ssh 로 docker run
-tests/               pytest 406개, 모듈과 1:1. 인코더·UMAP 은 결정적 스텁이라 모델 없이 돈다
+tests/               pytest 406개, 모듈과 1:1. DS1 은 인코더·UMAP 스텁으로 모델 없이 돌고, DS2 세부 견해 14개는 e5 모델 필요
 samples/             커밋되는 합성 샘플 입력
 docs/ds1/            티켓 문서, WORKLOG, TROUBLESHOOTING, CODE_STYLE, EC2_RUNBOOK, LABEL_GUIDE, 골드셋 라벨링 자료
 docs/ds2/            DS2 문서 (interface_ds1_to_ds2.md 는 08-27 제안안, 확정 계약은 contracts/)
