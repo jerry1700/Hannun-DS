@@ -1,14 +1,35 @@
-# 한눈 · 뉴스 중복 제거·이슈 군집 파이프라인 (DS1)
+<div align="center">
+
+# 한눈 DS
+
+### 뉴스 중복 제거·이슈 군집 데이터 파이프라인
 
 [![CI](https://github.com/jerry1700/Hannun-DS/actions/workflows/ci.yml/badge.svg)](https://github.com/jerry1700/Hannun-DS/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Airflow](https://img.shields.io/badge/Apache_Airflow-파이프라인-017CEE?logo=apacheairflow&logoColor=white)
+![SSAFY](https://img.shields.io/badge/SSAFY-특화_프로젝트-1428A0)
 
-> 하루 수천 건의 뉴스 기사를 중복 없이 **사건(이슈) 단위로 묶고**, 이슈마다 언론사들의
-> **관점 차이를 나란히** 보여 주는 서비스 "한눈"의 데이터 사이언스 파트.
-> 모토는 *사실 먼저, 관점은 원할 때*.
+`기사 정제` · `중복 제거` · `문장 임베딩` · `이슈 군집화` · `관점 대조`
+
+</div>
+
+---
+
+한눈 DS는 하루 수천 건의 뉴스 기사를 중복 없이 **사건 단위로 묶고**, 같은 이슈를 다룬 언론사들의 **관점 차이를 나란히** 보여 주는 서비스 "한눈"의 데이터 사이언스 파트입니다. 모토는 *사실 먼저, 관점은 원할 때*입니다.
 
 SSAFY 특화 프로젝트 (빅데이터 분산) · 2026.08 ~ 09 · 5인(시작은 6인, 중도 취업으로 1명 이탈) · 이 저장소는 팀 모노레포의 `data/ds/` 를
 커밋 이력째 분리한 것이다. 파이썬 패키지 `hannun` 하나를 DS1(이 문서의 필자)과 DS2 가 같이 만들었고,
 이 README 는 DS1 의 범위를 중심으로 쓴다. 코드 구조·실행·검사 안내는 [docs/DS_README.md](docs/DS_README.md).
+
+## 프로젝트 한눈에 보기
+
+| 구분 | 내용 |
+|---|---|
+| 해결하려는 문제 | 대량 뉴스의 중복과 동일 사건 기사의 분산 |
+| 핵심 처리 흐름 | 수집 기사 검증 → 본문 정제 → 중복 제거 → 임베딩 → 이슈 군집화 |
+| 주요 알고리즘 | MinHash/LSH, TF-IDF, multilingual-e5, UMAP, HDBSCAN |
+| 운영 방식 | Airflow 기반 매시 재군집 및 15분 단위 증분 배정 |
+| 프로젝트 범위 | 한눈 서비스의 DS1 파이프라인과 DS2 연동 |
 
 ## 무엇을 풀었나
 
