@@ -1,0 +1,15 @@
+# 테스트 406개와 운영 체인이 검증된 버전 (Python 3.12, 2026-09). CI 와 재현 설치에서 -c 로 쓴다.
+# pip install -e ".[dev,clustering]" -c constraints.txt
+numpy==2.5.2
+scipy==1.18.1
+pandas==3.0.5
+pyarrow==25.0.1
+pydantic==2.13.5
+datasketch==2.0.0
+scikit-learn==1.9.0
+umap-learn==0.5.12
+numba==0.67.0
+sentence-transformers==6.0.0
+torch==2.13.0
+pytest==9.1.1
+flake8==7.3.0

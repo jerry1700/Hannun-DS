@@ -1,5 +1,7 @@
 # 한눈 · 뉴스 중복 제거·이슈 군집 파이프라인 (DS1)
 
+[![CI](https://github.com/jerry1700/Hannun-DS/actions/workflows/ci.yml/badge.svg)](https://github.com/jerry1700/Hannun-DS/actions/workflows/ci.yml)
+
 > 하루 수천 건의 뉴스 기사를 중복 없이 **사건(이슈) 단위로 묶고**, 이슈마다 언론사들의
 > **관점 차이를 나란히** 보여 주는 서비스 "한눈"의 데이터 사이언스 파트.
 > 모토는 *사실 먼저, 관점은 원할 때*.
@@ -70,7 +72,7 @@ DS1 체인 9단계 (`scripts/run_daily_chain.sh`, EC2 도커 이미지 + Airflow
 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .\.venv\Scripts\activate
-pip install -e ".[dev]"                                  # 임베딩·군집까지 돌리려면 ".[dev,embedding,clustering]" (파이썬 3.12)
+pip install -e ".[dev,embedding,clustering]" -c constraints.txt   # 테스트만 돌리면 ".[dev,clustering]" 으로 충분 (torch 생략)
 python scripts/make_sample_data.py                       # 합성 샘플 입력 생성
 hannun-ingest --input samples/articles_sample.jsonl --gold-root gold -v
 hannun-preprocess --gold-root gold -v
@@ -89,6 +91,7 @@ pytest tests/ -q                       # 406개, 모델 다운로드 없이 약 
 flake8 src tests scripts dags --select=E9,F63,F7,F82,E501 --max-line-length=110
 ```
 
+GitHub Actions 가 push 마다 같은 검사를 돌린다(파이썬 3.12, `constraints.txt` 로 검증된 버전 고정).
 테스트는 파이프라인을 실제 저장소(임시 디렉터리)에 끝까지 돌려 검증한다. 인코더와 UMAP 은 결정적 스텁으로 바꿔
 모델 없이도 재사용 판정·세대 교체·승계 같은 동작을 재현한다.
 
@@ -102,7 +105,8 @@ tests/               pytest, 모듈과 1:1
 docs/ds1/            티켓별 설계·실측 문서, 작업기록, 트러블슈팅, 코드 스타일, 런북, 골드셋 라벨링 자료
 docs/ds2/            DS2 문서
 docs/contracts/      DE → DS 기사 JSON, DS1 → DS2 이슈 표 계약
-samples/             커밋되는 합성 샘플 입력
+samples/             커밋되는 합성 샘플 입력 (기사 원문 없음, samples/README.md)
+constraints.txt      검증된 의존성 버전
 ```
 
 ## 기여
