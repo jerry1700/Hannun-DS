@@ -1,5 +1,7 @@
 # DS1 → DS2 전달 데이터 (제안안 v1)
 
+> **이 문서는 2026-08-27 의 제안안이다.** 확정된 계약은 [../contracts/ds1-to-ds2-issue-tables.md](../contracts/ds1-to-ds2-issue-tables.md) 를 본다.
+
 > 작성: DS1 (2026-08-27) / 대상: DS2
 > 상태: **제안안** — 필드명은 BE 공통 기사 JSON·Gold 초안과 맞췄고, 전달 방식(Kafka/HDFS/직접 호출)은 DE와 협의 중.
 > 실데이터 샘플: `schemas/ds1_issue_output_v1.example.json` (반도체 이슈 3개, 기사 66건 — 더미 입력으로 바로 사용 가능)

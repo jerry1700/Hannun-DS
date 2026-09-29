@@ -1,8 +1,11 @@
 # EC2 운영 런북 — DS 파이프라인 (티켓 101)
 
+> 팀 모노레포 시절의 경로(`~/S15P21E105/data/ds`)는 이 저장소의 루트에 해당한다. §3·§6 의 cron 은
+> 2026-09-11 Airflow 전환 전의 방식이고 지금은 §7 이 실행 주체다.
+
 A 서버(EC2 t3.xlarge, Ubuntu 24.04, 4 vCPU·16GB·GPU 없음)에서 실수집 데이터로
 전체 체인을 돌리는 절차. 입력 계약은
-[contracts/de-to-ds-article-json.md](../../../docs/contracts/de-to-ds-article-json.md).
+[contracts/de-to-ds-article-json.md](../contracts/de-to-ds-article-json.md).
 
 ## 1. 최초 셋업 (한 번만)
 
@@ -71,7 +74,6 @@ BE 소비 지점: `issue_summary/`(피드: issue_id·대표 기사·hot_score) +
 - 컨테이너 운영(§6)이라 `git pull && docker build -t hannun-ds .` — 코드만 바뀌면 수 초
 - 고정 지도를 지금 벡터로 다시 학습해야 하면 `hannun-cluster --refit-map`, 옛 방식(매번 재학습)으로
   돌려 보려면 `--no-map`. 둘 다 실험용이고 체인은 기본값을 쓴다
-  재실행 (pyproject 의 콘솔 스크립트가 바뀌었을 수 있음 — TS-011)
 
 ## 6. 도커 전환 (승계 실전 검증 후)
 
