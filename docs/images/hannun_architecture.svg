@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="'Malgun Gothic', 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+<path d="M0,0 L10,5 L0,10 z" fill="#98A2B3"/></marker></defs>
+<rect width="1600" height="900" fill="#FFFFFF"/>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#1D2939">한눈 뉴스 파이프라인 아키텍처</text>
+<text x="40" y="76" font-size="13" fill="#667085">수집(DE) → HDFS 데이터 레이크 → 이슈 클러스터링(DS1) → 관점 분석(DS2) → 발행(BE)</text>
+<rect x="40" y="100" width="180" height="500" rx="14" fill="#F7F8FA" stroke="#667085" stroke-width="1.5"/>
+<text x="56" y="128" font-size="15" font-weight="700" fill="#667085">외부 데이터 소스</text>
+<rect x="260" y="100" width="200" height="500" rx="14" fill="#F7F8FA" stroke="#2E7DD7" stroke-width="1.5"/>
+<text x="276" y="128" font-size="15" font-weight="700" fill="#2E7DD7">DE · 수집 계층</text>
+<rect x="500" y="100" width="540" height="500" rx="14" fill="#F7F8FA" stroke="#E0761A" stroke-width="1.5"/>
+<text x="516" y="128" font-size="15" font-weight="700" fill="#E0761A">DS1 · 이슈 클러스터링</text>
+<rect x="1060" y="100" width="200" height="300" rx="14" fill="#F7F8FA" stroke="#7A4ED1" stroke-width="1.5"/>
+<text x="1076" y="128" font-size="15" font-weight="700" fill="#7A4ED1">DS2 · 후속 분석</text>
+<rect x="1300" y="100" width="260" height="500" rx="14" fill="#F7F8FA" stroke="#C7423C" stroke-width="1.5"/>
+<text x="1316" y="128" font-size="15" font-weight="700" fill="#C7423C">서비스 전달 계층</text>
+<rect x="260" y="630" width="1300" height="140" rx="14" fill="#F7F8FA" stroke="#2E9E5B" stroke-width="1.5"/>
+<text x="276" y="658" font-size="15" font-weight="700" fill="#2E9E5B">HDFS Data Lake</text>
+<rect x="60" y="150" width="140" height="60" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="130.0" y="176.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">뉴스 RSS</text>
+<text x="130.0" y="195.0" text-anchor="middle" font-size="12" fill="#667085">웹 페이지</text>
+<rect x="60" y="250" width="140" height="60" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="130.0" y="276.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">과거 뉴스</text>
+<text x="130.0" y="295.0" text-anchor="middle" font-size="12" fill="#667085">데이터셋</text>
+<rect x="280" y="150" width="160" height="64" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="360.0" y="178.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">RSS Crawler</text>
+<text x="360.0" y="197.0" text-anchor="middle" font-size="12" fill="#667085">URL 수집 · 본문 추출</text>
+<circle cx="428" cy="152" r="9" fill="#E8590C"/>
+<text x="428" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">A</text>
+<rect x="280" y="250" width="160" height="64" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="360.0" y="278.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Backfill Sender</text>
+<text x="360.0" y="297.0" text-anchor="middle" font-size="12" fill="#667085">과거 데이터 적재</text>
+<path d="M280,387 a80.0,7 0 0 1 160,0 v70 a80.0,7 0 0 1 -160,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="360.0" cy="387" rx="80.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="360.0" y="423.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Kafka</text>
+<text x="360.0" y="441.0" text-anchor="middle" font-size="12" fill="#667085">Raw Article Topic</text>
+<rect x="520" y="150" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="590.0" y="175.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Ingest</text>
+<text x="590.0" y="194.0" text-anchor="middle" font-size="12" fill="#667085">스키마 검증 · 파티션</text>
+<circle cx="648" cy="152" r="9" fill="#E8590C"/>
+<text x="648" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">A</text>
+<rect x="700" y="150" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="770.0" y="175.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Preprocess</text>
+<text x="770.0" y="194.0" text-anchor="middle" font-size="12" fill="#667085">본문 정제</text>
+<rect x="880" y="150" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="950.0" y="175.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Dedup</text>
+<text x="950.0" y="194.0" text-anchor="middle" font-size="12" fill="#667085">SHA-256 + MinHash/LSH</text>
+<rect x="700" y="255" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="770.0" y="280.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Clustering</text>
+<text x="770.0" y="299.0" text-anchor="middle" font-size="12" fill="#667085">UMAP + HDBSCAN</text>
+<rect x="880" y="255" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="950.0" y="280.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Embedding</text>
+<text x="950.0" y="299.0" text-anchor="middle" font-size="12" fill="#667085">multilingual-e5</text>
+<rect x="520" y="360" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="590.0" y="385.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Quality</text>
+<text x="590.0" y="404.0" text-anchor="middle" font-size="12" fill="#667085">구조화 판정 · 구제</text>
+<rect x="700" y="360" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="770.0" y="385.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Succession</text>
+<text x="770.0" y="404.0" text-anchor="middle" font-size="12" fill="#667085">영속 이슈 ID 연결</text>
+<rect x="880" y="360" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="950.0" y="385.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Assign</text>
+<text x="950.0" y="404.0" text-anchor="middle" font-size="12" fill="#667085">기존 이슈에 새 기사</text>
+<rect x="520" y="465" width="140" height="58" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="590.0" y="490.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Issue Summary</text>
+<text x="590.0" y="509.0" text-anchor="middle" font-size="12" fill="#667085">대표 기사 · Hot Score</text>
+<text x="700" y="560" text-anchor="start" font-size="12" fill="#667085">매시 :05 전체 재군집 · :20/:35/:50 증분 배정 (48h 창)</text>
+<rect x="1080" y="150" width="160" height="80" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1160.0" y="186.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">DS2 Pipeline</text>
+<text x="1160.0" y="205.0" text-anchor="middle" font-size="12" fill="#667085">이슈 표 → 관점 산출</text>
+<circle cx="1228" cy="152" r="9" fill="#E8590C"/>
+<text x="1228" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">A</text>
+<path d="M1080,297 a80.0,7 0 0 1 160,0 v56 a80.0,7 0 0 1 -160,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="1160.0" cy="297" rx="80.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1160.0" y="326.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">DS2 JSONL</text>
+<text x="1160.0" y="344.0" text-anchor="middle" font-size="12" fill="#667085">Output</text>
+<rect x="1320" y="150" width="220" height="60" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1430.0" y="185.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Gold Issue Feed Merge</text>
+<circle cx="1528" cy="152" r="9" fill="#E8590C"/>
+<text x="1528" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">A</text>
+<path d="M1320,252 a110.0,7 0 0 1 220,0 v50 a110.0,7 0 0 1 -220,0 z" fill="#EEF7EE" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="1430.0" cy="252" rx="110.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1430.0" y="278.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Gold</text>
+<text x="1430.0" y="296.0" text-anchor="middle" font-size="12" fill="#667085">서비스용 데이터 (HDFS)</text>
+<circle cx="1528" cy="249" r="9" fill="#1C6DD0"/>
+<text x="1528" y="253" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">S</text>
+<rect x="1320" y="345" width="220" height="52" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1430.0" y="376.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Publish Validation</text>
+<path d="M1320,437 a110.0,7 0 0 1 220,0 v50 a110.0,7 0 0 1 -220,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="1430.0" cy="437" rx="110.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1430.0" y="463.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Kafka</text>
+<text x="1430.0" y="481.0" text-anchor="middle" font-size="12" fill="#667085">Backend Topic</text>
+<rect x="1320" y="530" width="220" height="52" rx="8" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="1430.0" y="561.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Backend / API</text>
+<path d="M300,672 a75.0,7 0 0 1 150,0 v54 a75.0,7 0 0 1 -150,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="375.0" cy="672" rx="75.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="375.0" y="700.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Bronze</text>
+<text x="375.0" y="718.0" text-anchor="middle" font-size="12" fill="#667085">원본 이벤트</text>
+<path d="M500,672 a75.0,7 0 0 1 150,0 v54 a75.0,7 0 0 1 -150,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="575.0" cy="672" rx="75.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="575.0" y="700.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Silver</text>
+<text x="575.0" y="718.0" text-anchor="middle" font-size="12" fill="#667085">정규화 기사</text>
+<circle cx="638" cy="669" r="9" fill="#1C6DD0"/>
+<text x="638" y="673" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">S</text>
+<path d="M700,672 a75.0,7 0 0 1 150,0 v54 a75.0,7 0 0 1 -150,0 z" fill="#FFFFFF" stroke="#98A2B3" stroke-width="1.2"/>
+<ellipse cx="775.0" cy="672" rx="75.0" ry="7" fill="none" stroke="#98A2B3" stroke-width="1.2"/>
+<text x="775.0" y="700.0" text-anchor="middle" font-size="14" font-weight="700" fill="#1D2939">Backup</text>
+<text x="775.0" y="718.0" text-anchor="middle" font-size="12" fill="#667085">Compact</text>
+<text x="1540" y="700" text-anchor="end" font-size="12" fill="#667085">Gold 는 서비스 전달 계층에서 만들어 이 레이크에 저장</text>
+<path d="M200,180 L280,180" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M200,280 L280,280" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M440,172 L470,172 L470,422 L440,422" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M360,314 L360,380" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M360,464 L360,665" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M450,699 L500,699" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M375,733 L375,750 L775,750 L775,733" fill="none" stroke="#98A2B3" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+<path d="M575,665 L575,615 L490,615 L490,179 L520,179" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<text x="586" y="621" text-anchor="start" font-size="11" fill="#667085">ds_input JSONL · 15분</text>
+<path d="M660,179 L700,179" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M840,179 L880,179" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M950,208 L950,255" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M880,284 L840,284" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M950,313 L950,360" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M770,313 L770,360" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M880,389 L840,389" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M700,389 L660,389" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M590,418 L590,465" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1040,190 L1080,190" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1160,230 L1160,290" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M660,494 L1290,494 L1290,195 L1320,195" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1240,325 L1275,325 L1275,170 L1320,170" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1430,210 L1430,245" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1430,309 L1430,345" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1430,397 L1430,430" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<path d="M1430,494 L1430,530" fill="none" stroke="#98A2B3" stroke-width="1.6" marker-end="url(#arr)"/>
+<circle cx="50" cy="815" r="9" fill="#E8590C"/>
+<text x="50" y="819" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">A</text>
+<text x="66" y="819" text-anchor="start" font-size="12" fill="#1D2939">Apache Airflow — 크롤러 스케줄 · DS 체인(ds_chain / ds_assign) · Gold 생성</text>
+<circle cx="50" cy="845" r="9" fill="#1C6DD0"/>
+<text x="50" y="849" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">S</text>
+<text x="66" y="849" text-anchor="start" font-size="12" fill="#1D2939">Apache Spark — Silver 분산 변환 · Gold 데이터 병합</text>
+<text x="1560" y="849" text-anchor="end" font-size="11" fill="#667085">S15P21E105 한눈 · 2026-09</text>
+</svg>
