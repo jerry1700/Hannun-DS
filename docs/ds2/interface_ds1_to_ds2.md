@@ -35,7 +35,7 @@ Gold 저장은 이슈/기사 테이블로 나뉘지만(방법 B), 그건 DE 저�
   "issue_cluster_id": "issue_20260824_0004",
   "keywords": ["최태원", "비공개", "회동", "메가투자", "SK"],
   "representative_article_id": "sha256:2d6d...",
-  "representative_title": "李, 최태원과 비공개 만찬…반도체 메가투자 논의",
+  "representative_title": "정부, 가온시 반도체 산업단지 10조원 투자 계획 발표",
   "size": 22,
   "hot_score": 24,
   "press_count": 19,
@@ -46,8 +46,8 @@ Gold 저장은 이슈/기사 테이블로 나뉘지만(방법 B), 그건 DE 저�
   "articles": [
     {
       "article_id": "sha256:2d6d...",
-      "title": "李, 최태원과 비공개 만찬…반도체 메가투자 논의",
-      "content": "이재명 대통령이 ...",
+      "title": "정부, 가온시 반도체 산업단지 10조원 투자 계획 발표",
+      "content": "정부는 20일 가온시에 반도체 산업단지를 조성하는 데 ...",
       "publisher_name": "매일경제",
       "published_at": "2026-08-20T09:12:00Z",
       "is_representative": true,
