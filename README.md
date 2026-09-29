@@ -72,7 +72,8 @@ DS1 체인 9단계 (`scripts/run_daily_chain.sh`, EC2 도커 이미지 + Airflow
 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .\.venv\Scripts\activate
-pip install -e ".[dev,embedding,clustering]" -c constraints.txt   # 테스트만 돌리면 ".[dev,clustering]" 으로 충분 (torch 생략)
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU 빌드 (기본 인덱스는 CUDA 포함)
+pip install -e ".[dev,embedding,clustering]" -c constraints.txt
 python scripts/make_sample_data.py                       # 합성 샘플 입력 생성
 hannun-ingest --input samples/articles_sample.jsonl --gold-root gold -v
 hannun-preprocess --gold-root gold -v
@@ -87,13 +88,13 @@ hannun-cluster --gold-root gold --start-date 2026-08-20 --end-date 2026-08-21 -v
 ## 테스트
 
 ```bash
-pytest tests/ -q                       # 406개, 모델 다운로드 없이 약 1분
+pytest tests/ -q                       # 406개, 약 1분. DS2 세부 견해 테스트 14개는 e5 모델(첫 실행 때 다운로드)이 필요
 flake8 src tests scripts dags --select=E9,F63,F7,F82,E501 --max-line-length=110
 ```
 
 GitHub Actions 가 push 마다 같은 검사를 돌린다(파이썬 3.12, `constraints.txt` 로 검증된 버전 고정).
-테스트는 파이프라인을 실제 저장소(임시 디렉터리)에 끝까지 돌려 검증한다. 인코더와 UMAP 은 결정적 스텁으로 바꿔
-모델 없이도 재사용 판정·세대 교체·승계 같은 동작을 재현한다.
+DS1 테스트는 파이프라인을 실제 저장소(임시 디렉터리)에 끝까지 돌려 검증하며, 인코더와 UMAP 을 결정적 스텁으로
+바꿔 모델 없이 재사용 판정·세대 교체·승계 같은 동작을 재현한다.
 
 ## 저장소 구성
 

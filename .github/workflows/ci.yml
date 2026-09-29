@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # DS2 세부 견해 테스트가 이 모델을 local_files_only 로 연다 — 테스트 전에 캐시에 있어야 한다
+  HF_MODEL: dragonkue/multilingual-e5-small-ko-v2
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,7 +18,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      # 임베딩 그룹(torch)은 테스트에 필요 없다 — 인코더는 결정적 스텁으로 대체된다
-      - run: pip install -e ".[dev,clustering]" -c constraints.txt
+      # torch 는 CPU 빌드로 먼저 — 기본 인덱스는 CUDA 포함 수 GB 짜리를 받는다
+      - run: pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev,embedding,clustering]" -c constraints.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ env.HF_MODEL }}
+      - run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${{ env.HF_MODEL }}', device='cpu')"
       - run: python -m flake8 src tests scripts dags --select=E9,F63,F7,F82,E501 --max-line-length=110 --jobs=1
       - run: python -m pytest tests/ -q
